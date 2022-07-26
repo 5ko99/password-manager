@@ -1,6 +1,6 @@
 
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Record {
     pub record_name: String,
     pub username: Option<String>,

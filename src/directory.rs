@@ -4,7 +4,7 @@ use std::rc::Rc;
 #[derive(Default, Debug)]
 pub struct Directory {
     pub name: String,
-    pub records: Vec<Rc<Record>>,
+    records: Vec<Rc<Record>>,
     deleted: bool,
 }
 
@@ -28,7 +28,7 @@ impl Directory {
         }
     }
 
-    fn remove_record_by_name(&mut self, record_name: &str) -> Result<(), std::io::Error> {
+    pub fn remove_record_by_name(&mut self, record_name: &str) -> Result<(), std::io::Error> {
         let mut index = 0;
         for record in self.records.iter() {
             if record.record_name == record_name {
@@ -47,6 +47,18 @@ impl Directory {
         self.remove_record_by_name(&record.record_name)
     }
 
+    pub fn remove_record_by_index(&mut self, index: usize) -> Result<(), std::io::Error> {
+        if index >= self.records.len() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Index out of range",
+            ));
+        } else {
+            self.records.remove(index);
+            return Ok(());
+        }
+    }
+
     pub fn update_dir(&mut self) {
         for i in 0..self.records.len() {
             if self.records[i].is_deleted() {
@@ -58,4 +70,17 @@ impl Directory {
     pub fn delete_directory(&mut self) {
         self.deleted = true;
     }
+
+    pub fn get(&self, index: usize) -> Option<Rc<Record>> {
+        if index >= self.records.len() {
+            return None;
+        } else {
+            return Some(self.records[index].clone());
+        }
+    }
+
+    pub fn length(&self) -> usize {
+        self.records.len()
+    }
+
 }
