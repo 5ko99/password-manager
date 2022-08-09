@@ -1,6 +1,8 @@
+use serde::{Serialize, Deserialize};
 
 
-#[derive(Default, Debug, Clone)]
+
+#[derive(Default,Serialize, Deserialize, Clone, Debug)]
 pub struct Record {
     pub record_name: String,
     pub username: Option<String>,

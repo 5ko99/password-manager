@@ -4,6 +4,9 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 use std::{fs, thread};
 
+use aes::Aes128;
+use aes::cipher::KeyInit;
+use aes::cipher::generic_array::GenericArray;
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use serde::{Serialize, Deserialize};
@@ -18,6 +21,19 @@ use tui::Terminal;
 
 use crate::directory::Directory;
 use crate::record::Record;
+
+use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+
+use pbkdf2::{
+    password_hash::{
+        PasswordHasher, SaltString,
+    },
+    Pbkdf2,
+};
+
+
+type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
+type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
 const PATH_TO_CONFIG: &str = "./data/.conf";
 
@@ -44,9 +60,9 @@ pub struct Program {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct User {
-    username: String,
-    password: String,
+pub struct User {
+    pub username: String, // must be max 16 characters long
+    pub password: String,
 }
 
 enum ProgramEvent<I> {
@@ -95,6 +111,8 @@ impl Program {
             if !Program::users_exist(&username,&users) {
                 println!("Username already exists!");
                 continue;
+            } else if username.len() > 16 {
+                println!("Username is too long!");
             } else {
                 break;
             }
@@ -127,7 +145,7 @@ impl Program {
         !users.iter().any(|u| u.username == username)
     }
 
-    fn login(&mut self) -> Result<(User), Box<dyn Error>> {
+    fn login(&mut self) -> Result<User, Box<dyn Error>> {
 
         let mut username = String::new();
         println!("Please enter your username: ");
@@ -136,24 +154,18 @@ impl Program {
 
         let master_key = rpassword::prompt_password("Please enter your master key: ").unwrap();
         let master_key = master_key.trim();
-        let master_key = digest(master_key);
+        let master_key_hash = digest(master_key);
 
         let users = Program::load_config().expect("Critical error: failed to load config");
-        let user = users.iter().find(|u| u.username == username);
+        let user = users.iter().find(|u| u.username == username && u.password == master_key_hash);
         if user.is_none() {
-            return Err(Box::new(io::Error::new(io::ErrorKind::Other, "Username not found!")));
+            return Err(Box::new(io::Error::new(io::ErrorKind::Other, "Username not found or wrong password!")));
         } else {
-            let user = user.unwrap();
-            if user.password == master_key {
-                //TODO: Change user password to hashed version of encryption key.
-                let password = user.password.clone();
-                return Ok(User{
-                    username: username.to_string(),
-                    password: password,
-                });
-            } else {
-                return Err(Box::new(io::Error::new(io::ErrorKind::Other, "Incorrect master key!")));
-            }
+            let user = User {
+                username: username.to_string(),
+                password: master_key.to_string(),
+            };
+            Ok(user)
         }
     }
 
@@ -183,6 +195,12 @@ impl Program {
                     }
                 }
             };
+
+            //let data = Program::decrypt_data(data);
+
+            let data: Vec<Record> = serde_json::from_str(&data)?;
+
+            
                 
         } else {
             return Err(Box::new(LogicError::NoLoggedUser));
@@ -191,9 +209,7 @@ impl Program {
         Ok(())
     }
 
-    fn decrypt_data() -> Result<(), Box<dyn Error>> {
-        Ok(())
-    }
+    
 
     fn add_record(&mut self, record: Record) -> Result<&Record, Box<dyn Error>> {
         if let Some(logged_user) = &self.logged_user {
@@ -367,4 +383,124 @@ impl Program {
     );
         home
     }
+
+
+    pub fn decrypt_data(&self ,block: &Vec<u8>) -> String {
+        let user = match &self.logged_user {
+            Some(u) => u,
+            None => panic!("No logged user!"),
+        };
+
+
+        let password = user.password.as_bytes();
+
+        let mut username_for_salt = user.username.clone();
+        username_for_salt.shrink_to(16);
+        for _ in 0..16 - user.username.len() {
+            username_for_salt.push('p');
+        }
+
+        assert_eq!(username_for_salt.len(), 16);
+
+        let salt = match SaltString::new(&username_for_salt) {
+            Ok(salt) => salt,
+            Err(e) => {
+                panic!("Error while creating salt string:{}", e);
+            }
+        };
+
+        let password_hash = match Pbkdf2.hash_password(password, &salt) {
+            Ok(hash) => hash,
+            Err(e) => panic!("Error while hashing the master key:{}", e),
+        };
+
+        let password_hash = match password_hash.hash {
+            Some(hash) => hash.to_string(),
+            None => panic!("Error while hashing the master key"),
+        };
+
+        let mut key: [u8; 16] = [0; 16];
+
+        for i in 0..16 {
+            key[i] = password_hash.as_bytes()[i];
+        }
+
+        let iv = username_for_salt.as_bytes();
+
+        let cipher = Aes128CbcDec::new_from_slices(&key, &iv);
+
+        let cipher = match cipher {
+            Ok(cipher) => cipher,
+            Err(e) => panic!("Error while creating the cipher: {}", e),
+        };
+
+        let decrypt_block = cipher.decrypt_padded_vec_mut::<Pkcs7>(block.as_slice());
+
+        let decrypt_block = match decrypt_block {
+            Ok(block) => block,
+            Err(e) => panic!("Error while decrypting the block: {}", e),
+        };
+
+        let mut decrypt_block_string: String = String::new();
+
+        for i in 0..decrypt_block.len() {
+            decrypt_block_string.push(decrypt_block[i] as char);
+        }
+
+        decrypt_block_string
+    }
+
+    pub fn encrypt_data(&self ,block: &str) -> Vec<u8> {
+        let user = match &self.logged_user {
+            Some(u) => u,
+            None => panic!("No logged user!"),
+        };
+
+        let password = user.password.as_bytes();
+
+        let mut username_for_salt = user.username.clone();
+        username_for_salt.shrink_to(16);
+        for _ in 0..16 - user.username.len() {
+            username_for_salt.push('p');
+        }
+
+        assert_eq!(username_for_salt.len(), 16);
+
+        let salt = match SaltString::new(&username_for_salt) {
+            Ok(salt) => salt,
+            Err(e) => {
+                panic!("Error while creating salt string:{}", e);
+            }
+        };
+
+        let password_hash = match Pbkdf2.hash_password(password, &salt) {
+            Ok(hash) => hash,
+            Err(e) => panic!("Error while hashing the master key:{}", e),
+        };
+
+        let password_hash = match password_hash.hash {
+            Some(hash) => hash.to_string(),
+            None => panic!("Error while hashing the master key"),
+        };
+
+        let mut key: [u8; 16] = [0; 16];
+
+        for i in 0..16 {
+            key[i] = password_hash.as_bytes()[i];
+        }
+
+        let iv = username_for_salt.as_bytes();
+
+        let cipher = Aes128CbcEnc::new_from_slices(&key, &iv);
+
+        let cipher = match cipher {
+            Ok(cipher) => cipher,
+            Err(e) => panic!("Error while creating the cipher: {}", e),
+        };
+
+        let encrypt_block = cipher.encrypt_padded_vec_mut::<Pkcs7>(block.as_bytes());
+
+        encrypt_block
+    }
+
 }
