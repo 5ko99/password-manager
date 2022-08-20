@@ -8,7 +8,6 @@ pub struct Record {
     pub username: Option<String>,
     pub email: Option<String>,
     pub password: Option<String>,
-    deleted: bool,
 }
 
 impl PartialEq for Record {
@@ -21,7 +20,6 @@ impl Record {
     pub fn new(record_name: String, username: Option<String>, email: Option<String>, password: Option<String>,) -> Record {
         let mut rec = Record {
             record_name: record_name.clone(),
-            deleted: false,
             ..Default::default()
         };
         if username.is_some() {
@@ -34,13 +32,5 @@ impl Record {
             rec.password = password.clone();
         }
         rec
-    }
-
-    pub fn delete_record(&mut self) {
-        self.deleted = true;
-    }
-
-    pub fn is_deleted(&self) -> bool {
-        self.deleted
     }
 }

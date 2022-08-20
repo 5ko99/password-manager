@@ -7,20 +7,6 @@ fn test_record_new() {
     assert_eq!(record.username, None);
     assert_eq!(record.email, None);
     assert_eq!(record.password, None);
-    assert_eq!(record.is_deleted(), false);
-}
-
-#[test]
-fn test_record_delete_record() {
-    let mut record = Record::new("test".to_string(), None, None, None);
-    record.delete_record();
-    assert_eq!(record.is_deleted(), true);
-}
-
-#[test]
-fn test_record_is_deleted() {
-    let record = Record::new("test".to_string(), None, None, None);
-    assert_eq!(record.is_deleted(), false);
 }
 
 #[test]

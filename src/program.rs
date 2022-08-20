@@ -1,12 +1,10 @@
+use core::time;
 use std::error::Error;
 use std::io::{self, Stdout};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 use std::{fs, thread};
 
-use aes::Aes128;
-use aes::cipher::KeyInit;
-use aes::cipher::generic_array::GenericArray;
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use serde::{Serialize, Deserialize};
@@ -16,10 +14,9 @@ use tui::backend::CrosstermBackend;
 use tui::layout::{Alignment, Constraint, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
 use tui::text::{Span, Spans};
-use tui::widgets::{Block, BorderType, Borders, ListState, Paragraph, Tabs, Wrap};
+use tui::widgets::{Block, BorderType, Borders, ListState, Paragraph, Tabs};
 use tui::Terminal;
 
-use crate::directory::Directory;
 use crate::record::Record;
 
 use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
@@ -45,15 +42,16 @@ const MENU_TITLES: &'static [&str] = &["Main", "Add", "Help"];
 enum LogicError {
     #[snafu(display("No logged user found!"))]
     NoLoggedUser,
-    #[snafu(display("The widget '{widget_name}' could not be found"))]
-    WidgetNotFound { widget_name: String },
+    #[snafu(display("The element '{name}' is already in the list! Please choose another name."))]
+    DuplicationError { name: String },
+    #[snafu(display("The user '{name}' is already logged! Please logout first!"))]
+    AlreadyLoggedUser { name: String },
 }
 
 
 pub struct Program {
     records: Vec<Record>,
     should_quit: bool,
-    directories: Vec<Directory>,
     terminal: Terminal<CrosstermBackend<Stdout>>,
     active_menu_item: MenuItem,
     logged_user: Option<User>,
@@ -92,7 +90,6 @@ impl Program {
         Program {
             records: Vec::new(),
             should_quit: false,
-            directories: Vec::new(),
             terminal: Terminal::new(CrosstermBackend::new(io::stdout())).unwrap(),
             active_menu_item: MenuItem::Main,
             logged_user: None,
@@ -145,16 +142,24 @@ impl Program {
         !users.iter().any(|u| u.username == username)
     }
 
-    fn login(&mut self) -> Result<User, Box<dyn Error>> {
-
+    fn get_login_info() -> (String, String,String) {
         let mut username = String::new();
         println!("Please enter your username: ");
-        io::stdin().read_line(&mut username)?;
+        io::stdin().read_line(&mut username).expect("Failed to read username");
         let username = username.trim();
 
         let master_key = rpassword::prompt_password("Please enter your master key: ").unwrap();
         let master_key = master_key.trim();
         let master_key_hash = digest(master_key);
+
+        (username.to_string(), master_key.to_string(), master_key_hash)
+    }
+
+    pub fn login(&mut self,username: String, master_key: String, master_key_hash: String) -> Result<(), Box<dyn Error>> {
+
+        if let Some(logged_user) = &self.logged_user {
+            return Err(Box::new(LogicError::AlreadyLoggedUser { name: logged_user.username.clone() }));
+        }
 
         let users = Program::load_config().expect("Critical error: failed to load config");
         let user = users.iter().find(|u| u.username == username && u.password == master_key_hash);
@@ -162,10 +167,11 @@ impl Program {
             return Err(Box::new(io::Error::new(io::ErrorKind::Other, "Username not found or wrong password!")));
         } else {
             let user = User {
-                username: username.to_string(),
-                password: master_key.to_string(),
+                username: username,
+                password: master_key,
             };
-            Ok(user)
+            self.logged_user = Some(user); // Login successful.
+            Ok(())
         }
     }
 
@@ -182,13 +188,13 @@ impl Program {
         //TODO: Load data after login, and decrypt it.
         if let Some(logged_user) = &self.logged_user {
             let path_to_data = format!("./data/{}.json", logged_user.username);
-            let data = fs::read_to_string(&path_to_data);
-            let data = match data {
+            let encrypted_data = fs::read(&path_to_data);
+            let encrypted_data = match encrypted_data {
                 Ok(data) => data,
                 Err(error) => match error.kind() {
                     io::ErrorKind::NotFound => {
                         fs::write(path_to_data, b"")?;
-                        "".to_string()
+                        Vec::new()
                     }
                     _ => {
                         return Err(Box::new(error));
@@ -196,11 +202,13 @@ impl Program {
                 }
             };
 
-            //let data = Program::decrypt_data(data);
+            let data = self.decrypt_data(&encrypted_data);
 
             let data: Vec<Record> = serde_json::from_str(&data)?;
 
-            
+            for record in data {
+                self.records.push(record);
+            }
                 
         } else {
             return Err(Box::new(LogicError::NoLoggedUser));
@@ -211,10 +219,23 @@ impl Program {
 
     
 
-    fn add_record(&mut self, record: Record) -> Result<&Record, Box<dyn Error>> {
-        if let Some(logged_user) = &self.logged_user {
-            self.records.push(record);
-            Ok(self.records.last().expect("Critical error: failed to add record"))
+    pub fn add_record(&mut self, record: Record) -> Result<&Record, Box<dyn Error>> {
+        if self.logged_user.is_some() {
+            if self.records.contains(&record) {
+                return Err(Box::new(LogicError::DuplicationError { name: record.record_name }));
+            } else {
+                self.records.push(record);
+                return Ok(&self.records.last().expect("Critical error: failed to get last record"));
+            }
+        } else {
+            return Err(Box::new(LogicError::NoLoggedUser));
+        }
+    }
+
+    pub fn delete_record(&mut self, record: &Record) -> Result<(), Box<dyn Error>> {
+        if self.logged_user.is_some() {
+            self.records.retain(|r| r != record);
+            Ok(())
         } else {
             return Err(Box::new(LogicError::NoLoggedUser));
         }
@@ -227,9 +248,9 @@ impl Program {
             io::stdin().read_line(&mut input)?;
             let input = input.trim();
             if input == "l" {
-                match self.login() {
-                    Ok(user) => {
-                        self.logged_user = Some(user); // Login successful.
+                let (username, master_key,master_key_hash) = Program::get_login_info();
+                match self.login(username,master_key,master_key_hash) {
+                    Ok(()) => {
                         self.load_and_decrypt_data()?;
                         break;
                     }
@@ -326,12 +347,27 @@ impl Program {
 
             self.handle_input(&rx)?;
 
-            if (self.should_quit) {
+            if self.should_quit {
+                self.save_data()?;
+                println!("Successfully saved data! Bye!");
+                thread::sleep(Duration::from_millis(500));
                 self.terminal.clear()?;
                 disable_raw_mode().expect("Failed to disable raw mode");
                 self.terminal.show_cursor()?;
                 break;
             }
+        }
+        Ok(())
+    }
+
+    pub fn save_data(&self) -> Result<(), Box<dyn Error>> {
+        if let Some(logged_user) = &self.logged_user {
+            let path_to_data = format!("./data/{}.json", logged_user.username);
+            let data = serde_json::to_string(&self.records)?;
+            let encrypted_data = self.encrypt_data(&data);
+            fs::write(path_to_data, encrypted_data).expect("Error while writing records to file!");
+        } else {
+            return Err(Box::new(LogicError::NoLoggedUser));
         }
         Ok(())
     }
@@ -501,6 +537,19 @@ impl Program {
         let encrypt_block = cipher.encrypt_padded_vec_mut::<Pkcs7>(block.as_bytes());
 
         encrypt_block
+    }
+
+    pub fn get_len_of_records(&self) -> usize {
+        self.records.len()
+    }
+
+    pub fn get_record_by_name(&self, name: &str) -> Option<&Record> {
+        for record in &self.records {
+            if record.record_name == name {
+                return Some(record);
+            }
+        }
+        None
     }
 
 }
