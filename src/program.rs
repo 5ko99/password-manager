@@ -63,6 +63,12 @@ pub struct User {
     pub password: String,
 }
 
+impl User {
+    pub fn new(username: String, password: String) -> User {
+        User { username, password }
+    }
+}
+
 enum ProgramEvent<I> {
     Input(I),
     Tick,
@@ -96,7 +102,7 @@ impl Program {
         }
     }
 
-    fn register_user(&self) -> Result<(), Box<dyn Error>> {
+    fn get_register_info() -> Result<User, Box<dyn Error>>  {
         let mut username = String::new();
         let mut master_key = String::new();
         let mut users = Program::load_config().expect("Critical error: failed to load config");
@@ -105,7 +111,7 @@ impl Program {
             println!("Please enter your username: ");
             io::stdin().read_line(&mut username)?;
             username = username.trim().to_string();
-            if !Program::users_exist(&username,&users) {
+            if Program::users_exist(&username,&users) {
                 println!("Username already exists!");
                 continue;
             } else if username.len() > 16 {
@@ -126,20 +132,53 @@ impl Program {
             }
         }
 
-        master_key = digest(master_key); 
+        master_key = digest(master_key);
+
         let user = User {
             username: username.to_string(),
             password: master_key.to_string(),
         };
-        
-        users.push(user);
 
+        Ok(user)
+    }
+
+    pub fn register_user(&self, user: User) -> Result<(), Box<dyn Error>> {
+        if self.logged_user.is_some() {
+            return Err(LogicError::AlreadyLoggedUser { name: user.username }.into());
+        }
+
+        let mut users = Program::load_config().expect("Critical error: failed to load config");
+
+        if Program::users_exist(&user.username, &users) {
+            return Err(LogicError::DuplicationError { name: user.username }.into());
+        } else {
+            
+        }
+
+        users.push(user);
         fs::write(PATH_TO_CONFIG, &serde_json::to_vec(&users)?)?;
         Ok(())
     }
 
+    pub fn delete_user(&mut self, username: &str) -> Result<(), Box<dyn Error>> {
+        if self.logged_user.is_none() && self.logged_user.as_ref().unwrap().username != username { // if the user is not logged in and the username is not the same as the one to be deleted throw error
+            return Err(LogicError::NoLoggedUser.into());
+        }
+
+        let mut users = Program::load_config().expect("Critical error: failed to load config");
+        users.retain(|u| u.username != username);
+        fs::write(PATH_TO_CONFIG, &serde_json::to_vec(&users)?)?; // remove the user from the config file
+
+        let path_to_data = format!("./data/{}.json", username);
+
+        fs::remove_file(path_to_data).expect("Error while deleting user data!"); // remove the user's file
+
+        self.should_quit = true; // quit the program at the next tick
+        Ok(())
+    }
+
     fn users_exist(username: &str, users: &Vec<User>) -> bool {
-        !users.iter().any(|u| u.username == username)
+        users.iter().any(|u| u.username == username)
     }
 
     fn get_login_info() -> (String, String,String) {
@@ -175,6 +214,13 @@ impl Program {
         }
     }
 
+    pub fn logout(&mut self) -> Result<(), Box<dyn Error>> {
+        self.save_data()?;
+        self.logged_user = None;
+        self.records = Vec::new();
+        Ok(())
+    }
+
     fn load_config() -> Result<Vec<User>, Box<dyn Error>> {
         let config = fs::read_to_string(PATH_TO_CONFIG)?;
         if config.is_empty() {
@@ -185,7 +231,6 @@ impl Program {
     }
 
     fn load_and_decrypt_data(&mut self) -> Result<(), Box<dyn Error>> {
-        //TODO: Load data after login, and decrypt it.
         if let Some(logged_user) = &self.logged_user {
             let path_to_data = format!("./data/{}.json", logged_user.username);
             let encrypted_data = fs::read(&path_to_data);
@@ -204,7 +249,15 @@ impl Program {
 
             let data = self.decrypt_data(&encrypted_data);
 
-            let data: Vec<Record> = serde_json::from_str(&data)?;
+            let data: Result<Vec<Record>, serde_json::Error> = serde_json::from_str(&data);
+
+            // if there is an error, just return an empty vector
+            let data = match data {
+                Ok(data) => data,
+                Err(_) =>  {
+                    Vec::new()
+                }
+            };
 
             for record in data {
                 self.records.push(record);
@@ -232,9 +285,9 @@ impl Program {
         }
     }
 
-    pub fn delete_record(&mut self, record: &Record) -> Result<(), Box<dyn Error>> {
+    pub fn delete_record(&mut self, record_name: &str) -> Result<(), Box<dyn Error>> {
         if self.logged_user.is_some() {
-            self.records.retain(|r| r != record);
+            self.records.retain(|r| r.record_name != record_name);
             Ok(())
         } else {
             return Err(Box::new(LogicError::NoLoggedUser));
@@ -259,8 +312,10 @@ impl Program {
                     }
                 }
             } else if input == "r" {
-                self.register_user()?;
-                break;
+                let user = Program::get_register_info()?;
+                self.register_user(user)?;
+                println!("User registered successfully!");
+                //break;
             } else {
                 println!("Invalid input.");
             }
@@ -349,8 +404,6 @@ impl Program {
 
             if self.should_quit {
                 self.save_data()?;
-                println!("Successfully saved data! Bye!");
-                thread::sleep(Duration::from_millis(500));
                 self.terminal.clear()?;
                 disable_raw_mode().expect("Failed to disable raw mode");
                 self.terminal.show_cursor()?;
@@ -426,6 +479,11 @@ impl Program {
             Some(u) => u,
             None => panic!("No logged user!"),
         };
+
+        // if the block is empty, return an empty string
+        if block.is_empty() {
+            return String::new();
+        }
 
 
         let password = user.password.as_bytes();
