@@ -27,7 +27,6 @@ use pbkdf2::{
     Pbkdf2,
 };
 
-
 type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
@@ -35,7 +34,7 @@ const PATH_TO_CONFIG: &str = "./data/.conf";
 
 const MINIMUM_PASSWORD_LENGTH: usize = 4;
 
-const MENU_TITLES: &'static [&str] = &["Main", "Add", "Help"];
+const MENU_TITLES: &'static [&str] = &["Main", "Add/Edit", "Help"];
 
 #[derive(Debug, Snafu)]
 enum LogicError {
@@ -104,6 +103,165 @@ impl Program {
             show_password: false,
             edit_mode: false,
         }
+    }
+
+    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
+        loop {
+            println!("Enter l to login, or r to register.");
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            let input = input.trim();
+            if input == "l" {
+                let (username, master_key, master_key_hash) = Program::get_login_info();
+                match self.login(username, master_key, master_key_hash) {
+                    Ok(()) => {
+                        self.load_and_decrypt_data()?;
+                        break;
+                    }
+                    Err(e) => {
+                        println!("{}", e);
+                    }
+                }
+            } else if input == "r" {
+                let user = Program::get_register_info()?;
+                self.register_user(user)?;
+                println!("User registered successfully!");
+            } else {
+                println!("Invalid input.");
+            }
+        }
+
+        enable_raw_mode().expect("Failed to enable raw mode");
+        let (tx, rx) = mpsc::channel();
+        let tick_rate = Duration::from_millis(200);
+
+        // Reading for events key press or tick
+        thread::spawn(move || {
+            let mut last_tick = Instant::now();
+            loop {
+                let timeout = tick_rate
+                    .checked_sub(last_tick.elapsed())
+                    .unwrap_or_else(|| Duration::from_secs(0));
+
+                if event::poll(timeout).expect("poll works") {
+                    if let Event::Key(key) = event::read().expect("can read events") {
+                        tx.send(ProgramEvent::Input(key)).expect("can send events");
+                    }
+                }
+
+                if last_tick.elapsed() >= tick_rate {
+                    if let Ok(_) = tx.send(ProgramEvent::Tick) {
+                        last_tick = Instant::now();
+                    }
+                }
+            }
+        });
+
+        self.terminal.clear()?;
+
+        self.active_menu_item = MenuItem::Main;
+
+        let mut record_list_state = ListState::default();
+        record_list_state.select(Some(0));
+
+        let mut edit_list_state = ListState::default();
+        edit_list_state.select(Some(0));
+
+        let mut edit_record = Record::new("".to_string(), None, None, None);
+
+        loop {
+            self.terminal.draw(|rect| {
+                let size = rect.size();
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .margin(2)
+                    .constraints(
+                        [
+                            Constraint::Length(3),
+                            Constraint::Min(2),
+                            Constraint::Length(3),
+                        ]
+                        .as_ref(),
+                    )
+                    .split(size);
+
+                let menu = MENU_TITLES
+                    .iter()
+                    .map(|item| {
+                        Spans::from(vec![Span::styled(*item, Style::default().fg(Color::White))])
+                    })
+                    .collect();
+
+                let tabs = Tabs::new(menu)
+                    .select(self.active_menu_item.clone().into())
+                    .block(Block::default().title("Menu").borders(Borders::ALL))
+                    .style(Style::default().fg(Color::White))
+                    .highlight_style(
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::UNDERLINED),
+                    )
+                    .divider(Span::raw("|"));
+
+                rect.render_widget(tabs, chunks[0]);
+
+                match self.active_menu_item {
+                    MenuItem::Main => {
+                        let records_chunk = Layout::default()
+                            .direction(Direction::Horizontal)
+                            .constraints(
+                                [Constraint::Percentage(20), Constraint::Percentage(80)].as_ref(),
+                            )
+                            .split(chunks[1]);
+                        let render_result = Program::render_records(
+                            &record_list_state,
+                            &self.records,
+                            &self.show_password,
+                        );
+                        if let Some((left, right)) = render_result {
+                            rect.render_stateful_widget(
+                                left,
+                                records_chunk[0],
+                                &mut record_list_state,
+                            );
+                            rect.render_widget(right, records_chunk[1]);
+                        } else {
+                        }
+                    }
+                    MenuItem::Help => rect.render_widget(Program::render_help(), chunks[1]),
+                    MenuItem::Add => {
+                        let edit_chunk = Layout::default()
+                            .direction(Direction::Horizontal)
+                            .constraints(
+                                [Constraint::Percentage(20), Constraint::Percentage(80)].as_ref(),
+                            )
+                            .split(chunks[1]);
+
+                        if let Some((left, right)) = Program::render_add(&edit_record) {
+                            rect.render_stateful_widget(left, edit_chunk[0], &mut edit_list_state);
+                            rect.render_widget(right, edit_chunk[1]);
+                        }
+                    }
+                }
+            })?;
+
+            self.handle_input(
+                &rx,
+                &mut record_list_state,
+                &mut edit_list_state,
+                &mut edit_record,
+            )?;
+
+            if self.should_quit {
+                self.save_data()?;
+                self.terminal.clear()?;
+                disable_raw_mode().expect("Failed to disable raw mode");
+                self.terminal.show_cursor()?;
+                break;
+            }
+        }
+
+        Ok(())
     }
 
     fn get_register_info() -> Result<User, Box<dyn Error>> {
@@ -259,43 +417,6 @@ impl Program {
         Ok(parsed)
     }
 
-    fn load_and_decrypt_data(&mut self) -> Result<(), Box<dyn Error>> {
-        if let Some(logged_user) = &self.logged_user {
-            let path_to_data = format!("./data/{}.json", logged_user.username);
-            let encrypted_data = fs::read(&path_to_data);
-            let encrypted_data = match encrypted_data {
-                Ok(data) => data,
-                Err(error) => match error.kind() {
-                    io::ErrorKind::NotFound => {
-                        fs::write(path_to_data, b"")?;
-                        Vec::new()
-                    }
-                    _ => {
-                        return Err(Box::new(error));
-                    }
-                },
-            };
-
-            let data = self.decrypt_data(&encrypted_data);
-
-            let data: Result<Vec<Record>, serde_json::Error> = serde_json::from_str(&data);
-
-            // if there is an error, just return an empty vector
-            let data = match data {
-                Ok(data) => data,
-                Err(_) => Vec::new(),
-            };
-
-            for record in data {
-                self.records.push(record);
-            }
-        } else {
-            return Err(Box::new(LogicError::NoLoggedUser));
-        }
-
-        Ok(())
-    }
-
     pub fn add_record(&mut self, record: Record) -> Result<&Record, Box<dyn Error>> {
         if self.logged_user.is_some() {
             if self.records.contains(&record) {
@@ -321,172 +442,6 @@ impl Program {
         } else {
             return Err(Box::new(LogicError::NoLoggedUser));
         }
-    }
-
-    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        loop {
-            println!("Enter l to login, or r to register.");
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-            let input = input.trim();
-            if input == "l" {
-                let (username, master_key, master_key_hash) = Program::get_login_info();
-                match self.login(username, master_key, master_key_hash) {
-                    Ok(()) => {
-                        self.load_and_decrypt_data()?;
-                        break;
-                    }
-                    Err(e) => {
-                        println!("{}", e);
-                    }
-                }
-            } else if input == "r" {
-                let user = Program::get_register_info()?;
-                self.register_user(user)?;
-                println!("User registered successfully!");
-                //break;
-            } else {
-                println!("Invalid input.");
-            }
-        }
-
-        // let record = Record::new("YouTube".to_string(), Some("vanyo66".to_string()), Some("vanyo@abv.bg".to_string()), Some("a1w222".to_string()));
-        // self.add_record(record).unwrap();
-
-        enable_raw_mode().expect("Failed to enable raw mode");
-        let (tx, rx) = mpsc::channel();
-        let tick_rate = Duration::from_millis(200);
-        thread::spawn(move || {
-            let mut last_tick = Instant::now();
-            loop {
-                let timeout = tick_rate
-                    .checked_sub(last_tick.elapsed())
-                    .unwrap_or_else(|| Duration::from_secs(0));
-
-                if event::poll(timeout).expect("poll works") {
-                    if let Event::Key(key) = event::read().expect("can read events") {
-                        tx.send(ProgramEvent::Input(key)).expect("can send events");
-                    }
-                }
-
-                if last_tick.elapsed() >= tick_rate {
-                    if let Ok(_) = tx.send(ProgramEvent::Tick) {
-                        last_tick = Instant::now();
-                    }
-                }
-            }
-        });
-
-        self.terminal.clear()?;
-
-        self.active_menu_item = MenuItem::Main;
-
-        let mut record_list_state = ListState::default();
-        record_list_state.select(Some(0));
-
-        let mut edit_list_state = ListState::default();
-        edit_list_state.select(Some(0));
-
-        let mut edit_record = Record::new("".to_string(), None, None, None);
-
-        loop {
-            self.terminal.draw(|rect| {
-                let size = rect.size();
-                let chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .margin(2)
-                    .constraints(
-                        [
-                            Constraint::Length(3),
-                            Constraint::Min(2),
-                            Constraint::Length(3),
-                        ]
-                        .as_ref(),
-                    )
-                    .split(size);
-
-                let menu = MENU_TITLES
-                    .iter()
-                    .map(|t| {
-                        let (first, rest) = t.split_at(1);
-                        Spans::from(vec![
-                            Span::styled(
-                                first,
-                                Style::default()
-                                    .fg(Color::Yellow)
-                                    .add_modifier(Modifier::UNDERLINED),
-                            ),
-                            Span::styled(rest, Style::default().fg(Color::White)),
-                        ])
-                    })
-                    .collect();
-
-                let tabs = Tabs::new(menu)
-                    .select(self.active_menu_item.clone().into())
-                    .block(Block::default().title("Menu").borders(Borders::ALL))
-                    .style(Style::default().fg(Color::White))
-                    .highlight_style(Style::default().fg(Color::Yellow))
-                    .divider(Span::raw("|"));
-
-                rect.render_widget(tabs, chunks[0]);
-
-                match self.active_menu_item {
-                    MenuItem::Main => {
-                        let records_chunk = Layout::default()
-                            .direction(Direction::Horizontal)
-                            .constraints(
-                                [Constraint::Percentage(20), Constraint::Percentage(80)].as_ref(),
-                            )
-                            .split(chunks[1]);
-                        let render_result = Program::render_records(
-                            &record_list_state,
-                            &self.records,
-                            &self.show_password,
-                        );
-                        if let Some((left, right)) = render_result {
-                            rect.render_stateful_widget(
-                                left,
-                                records_chunk[0],
-                                &mut record_list_state,
-                            );
-                            rect.render_widget(right, records_chunk[1]);
-                        } else {
-                        }
-                    }
-                    MenuItem::Help => rect.render_widget(Program::render_help(), chunks[1]),
-                    MenuItem::Add => {
-                        let edit_chunk = Layout::default()
-                            .direction(Direction::Horizontal)
-                            .constraints(
-                                [Constraint::Percentage(20), Constraint::Percentage(80)].as_ref(),
-                            )
-                            .split(chunks[1]);
-
-                        if let Some((left, right)) = Program::render_add(&edit_record) {
-                            rect.render_stateful_widget(left, edit_chunk[0], &mut edit_list_state);
-                            rect.render_widget(right, edit_chunk[1]);
-                        }
-                    }
-                }
-            })?;
-
-            self.handle_input(
-                &rx,
-                &mut record_list_state,
-                &mut edit_list_state,
-                &mut edit_record,
-            )?;
-
-            if self.should_quit {
-                self.save_data()?;
-                self.terminal.clear()?;
-                disable_raw_mode().expect("Failed to disable raw mode");
-                self.terminal.show_cursor()?;
-                break;
-            }
-        }
-
-        Ok(())
     }
 
     pub fn save_data(&self) -> Result<(), Box<dyn Error>> {
@@ -681,16 +636,19 @@ impl Program {
                     } else {
                         return Err(Box::new(LogicError::NoLoggedUser {}));
                     }
-                },
+                }
                 KeyCode::F(n) => {
                     match n {
                         1 | 2 | 3 => {
                             // Copy the selected field 1 -> username, 2 -> email, 3 -> password
-                            let selected_record = self.records.get(
-                                records_list_state
-                                    .selected()
-                                    .expect("there is always a selected record"),
-                            ).unwrap();
+                            let selected_record = self
+                                .records
+                                .get(
+                                    records_list_state
+                                        .selected()
+                                        .expect("there is always a selected record"),
+                                )
+                                .unwrap();
                             let data;
                             match n {
                                 1 => {
@@ -741,7 +699,7 @@ impl Program {
                 .borders(Borders::ALL)
                 .style(Style::default().fg(Color::White))
                 .title("Help")
-                .border_type(BorderType::Plain),
+                .border_type(BorderType::Rounded),
         );
         home
     }
@@ -785,12 +743,10 @@ impl Program {
         let records = Block::default()
             .borders(Borders::ALL)
             .style(Style::default().fg(Color::White))
-            .title("Records list")
             .border_type(BorderType::Plain);
 
         let labels_block = Block::default()
             .borders(Borders::ALL)
-            .title("Labels")
             .border_type(BorderType::Plain);
 
         let list = List::new(items).block(records);
@@ -892,6 +848,43 @@ impl Program {
         ]);
 
         Some((list, records_detail))
+    }
+
+    fn load_and_decrypt_data(&mut self) -> Result<(), Box<dyn Error>> {
+        if let Some(logged_user) = &self.logged_user {
+            let path_to_data = format!("./data/{}.json", logged_user.username);
+            let encrypted_data = fs::read(&path_to_data);
+            let encrypted_data = match encrypted_data {
+                Ok(data) => data,
+                Err(error) => match error.kind() {
+                    io::ErrorKind::NotFound => {
+                        fs::write(path_to_data, b"")?;
+                        Vec::new()
+                    }
+                    _ => {
+                        return Err(Box::new(error));
+                    }
+                },
+            };
+
+            let data = self.decrypt_data(&encrypted_data);
+
+            let data: Result<Vec<Record>, serde_json::Error> = serde_json::from_str(&data);
+
+            // if there is an error, just return an empty vector
+            let data = match data {
+                Ok(data) => data,
+                Err(_) => Vec::new(),
+            };
+
+            for record in data {
+                self.records.push(record);
+            }
+        } else {
+            return Err(Box::new(LogicError::NoLoggedUser));
+        }
+
+        Ok(())
     }
 
     pub fn decrypt_data(&self, block: &Vec<u8>) -> String {

@@ -42,14 +42,14 @@ fn test_get_by_index() {
 #[should_panic]
 fn test_get_by_index_panic() {
     let record = Record::new("test".to_string(), Some("Petko".to_string()), None, Some("123".to_string()));
-    record[4].clone();
+    let _ = &record[4];
 }
 
 #[test]
 #[should_panic]
 fn test_get_by_index_panic2() {
     let record = Record::new("test".to_string(), Some("Petko".to_string()), None, Some("123".to_string()));
-    record[2].clone();
+    let _ = &record[2];
 }
 
 #[test]
