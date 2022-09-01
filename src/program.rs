@@ -6,20 +6,20 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 use std::{fs, thread};
 
-use aes::cipher::typenum::uint;
+use aes::cipher::typenum::{uint, True};
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 use snafu::Snafu;
-use tui::backend::CrosstermBackend;
+use tui::backend::{self, Backend, CrosstermBackend};
 use tui::layout::{Alignment, Constraint, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
 use tui::text::{Span, Spans};
 use tui::widgets::{
-    Block, BorderType, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, Tabs,
+    Block, BorderType, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, Tabs, TableState,
 };
-use tui::Terminal;
+use tui::{Frame, Terminal};
 
 use crate::record::Record;
 
@@ -56,6 +56,7 @@ pub struct Program {
     active_menu_item: MenuItem,
     logged_user: Option<User>,
     show_password: bool,
+    edit_mode: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -101,6 +102,7 @@ impl Program {
             active_menu_item: MenuItem::Main,
             logged_user: None,
             show_password: false,
+            edit_mode: false,
         }
     }
 
@@ -385,11 +387,7 @@ impl Program {
         let mut edit_list_state = ListState::default();
         edit_list_state.select(Some(0));
 
-        let mut data: Vec<String> = Vec::new();
-        data.push("Zamunda".to_string());
-        data.push("monkey".to_string());
-        data.push("monkey@abv.bg".to_string());
-        data.push("".to_string());
+        let mut edit_record = Record::new("".to_string(), None, None, None);
 
         loop {
             self.terminal.draw(|rect| {
@@ -457,12 +455,20 @@ impl Program {
                     }
                     MenuItem::Help => rect.render_widget(Program::render_help(), chunks[1]),
                     MenuItem::Add => {
-                        rect.render_widget(Program::render_add(&edit_list_state, &data), chunks[1]);
+                        rect.render_widget(
+                            Program::render_add(&edit_list_state, &edit_record),
+                            chunks[1],
+                        );
                     }
                 }
             })?;
 
-            self.handle_input(&rx, &mut record_list_state, &mut edit_list_state, &mut data)?;
+            self.handle_input(
+                &rx,
+                &mut record_list_state,
+                &mut edit_list_state,
+                &mut edit_record,
+            )?;
 
             if self.should_quit {
                 self.save_data()?;
@@ -493,18 +499,89 @@ impl Program {
         rx: &Receiver<ProgramEvent<KeyEvent>>,
         records_list_state: &mut ListState,
         edit_list_state: &mut ListState,
-        input_data: &mut Vec<String>,
+        edit_record: &mut Record,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // handle events
         match rx.recv()? {
             ProgramEvent::Input(event) => match event.code {
-                KeyCode::Char('q') => self.should_quit = true,
-                KeyCode::Char('h') => self.active_menu_item = MenuItem::Help,
-                KeyCode::Char('a') => self.active_menu_item = MenuItem::Add,
-                KeyCode::Char('m') => self.active_menu_item = MenuItem::Main,
-                KeyCode::Char('s') => self.show_password = !self.show_password,
+                KeyCode::Char('q') => {
+                    if self.active_menu_item != MenuItem::Add {
+                        self.should_quit = true;
+                    } else {
+                        if let Some(selected) = edit_list_state.selected() {
+                            let data = &mut edit_record[selected];
+                            data.push('q');
+                        }
+                    }
+                }
+                KeyCode::Char('h') => {
+                    if self.active_menu_item != MenuItem::Add {
+                        self.active_menu_item = MenuItem::Help;
+                    } else {
+                        if let Some(selected) = edit_list_state.selected() {
+                            let data = &mut edit_record[selected];
+                            data.push('h');
+                        }
+                    }
+                }
+                KeyCode::Char('a') => {
+                    if self.active_menu_item != MenuItem::Add {
+                        self.active_menu_item = MenuItem::Add;
+                        edit_list_state.select(Some(0));
+                    } else {
+                        if let Some(selected) = edit_list_state.selected() {
+                            let data = &mut edit_record[selected];
+                            data.push('a');
+                        }
+                    }
+                }
+                KeyCode::Char('m') => {
+                    if self.active_menu_item != MenuItem::Add {
+                        self.active_menu_item = MenuItem::Main;
+                    } else {
+                        if let Some(selected) = edit_list_state.selected() {
+                            let data = &mut edit_record[selected];
+                            data.push('m');
+                        }
+                    }
+                }
+                KeyCode::Char('s') => {
+                    if self.active_menu_item != MenuItem::Add {
+                        self.show_password = !self.show_password;
+                    } else {
+                        if let Some(selected) = edit_list_state.selected() {
+                            let data = &mut edit_record[selected];
+                            data.push('s');
+                        }
+                    }
+                }
                 KeyCode::Char('d') => {
-                    // Delete record
+                    if self.active_menu_item == MenuItem::Main {
+                        if let Some(selected) = records_list_state.selected() {
+                            self.records.remove(selected);
+                            records_list_state.select(Some(0));
+                        } else {
+                            if let Some(selected) = edit_list_state.selected() {
+                                let data = &mut edit_record[selected];
+                                data.push('d');
+                            }
+                        }
+                    }
+                }
+                KeyCode::Char('e') => {
+                    if self.active_menu_item != MenuItem::Add {
+                        self.active_menu_item = MenuItem::Add;
+                        edit_list_state.select(Some(0));
+                        if let Some(selected) = records_list_state.selected() {
+                            edit_record.clone_from(&self.records[selected]);
+                            self.edit_mode = true;
+                        }
+                    } else {
+                        if let Some(selected) = edit_list_state.selected() {
+                            let data = &mut edit_record[selected];
+                            data.push('e');
+                        }
+                    }
                 }
                 KeyCode::Up => {
                     if let Some(selected) = records_list_state.selected() {
@@ -528,7 +605,7 @@ impl Program {
                 }
                 KeyCode::Left => {
                     if let Some(selected) = edit_list_state.selected() {
-                        let len = 4; // this is hardcoded for now
+                        let len = Record::len(); // this is hardcoded for now
                         if selected <= 0 {
                             edit_list_state.select(Some(len - 1));
                         } else {
@@ -538,7 +615,7 @@ impl Program {
                 }
                 KeyCode::Right => {
                     if let Some(selected) = edit_list_state.selected() {
-                        let len = 4; // this is hardcoded for now
+                        let len = Record::len(); // this is hardcoded for now
                         if selected >= len - 1 {
                             edit_list_state.select(Some(0));
                         } else {
@@ -549,7 +626,7 @@ impl Program {
                 KeyCode::Char(c) => {
                     if self.active_menu_item == MenuItem::Add {
                         if let Some(selected) = edit_list_state.selected() {
-                            let data = &mut input_data[selected];
+                            let data = &mut edit_record[selected];
                             data.push(c);
                         }
                     }
@@ -557,9 +634,30 @@ impl Program {
                 KeyCode::Backspace => {
                     if self.active_menu_item == MenuItem::Add {
                         if let Some(selected) = edit_list_state.selected() {
-                            let data = &mut input_data[selected];
+                            let data = &mut edit_record[selected];
                             data.pop();
                         }
+                    }
+                }
+                KeyCode::Esc => {
+                    if self.active_menu_item == MenuItem::Add {
+                        self.active_menu_item = MenuItem::Main;
+                    }
+                }
+                KeyCode::Enter => {
+                    if self.active_menu_item == MenuItem::Add && edit_record.record_name.len() > 0 {
+                        self.active_menu_item = MenuItem::Main;
+                        if self.edit_mode {
+                            self.records
+                                .iter_mut()
+                                .find(|r| r.record_name == edit_record.record_name)
+                                .map(|r| {
+                                    r.clone_from(edit_record);
+                                });
+                        } else {
+                            self.records.push(edit_record.clone());
+                        }
+                        edit_record.clear();
                     }
                 }
                 _ => {}
@@ -579,6 +677,11 @@ impl Program {
             Spans::from(vec![Span::raw("Press `a` to add a new record.")]),
             Spans::from(vec![Span::raw("Press `d` to delete the current record.")]),
             Spans::from(vec![Span::raw("Press `e` to edit the current record.")]),
+            Spans::from(vec![Span::raw("Press `up` and `down` to select a record.")]),
+            Spans::from(vec![Span::raw("Press `left` and `right` to select a field.")]),
+            Spans::from(vec![Span::raw("Press `enter` when you are in edit/add mode to save the record.")]),
+            Spans::from(vec![Span::raw("Press `esc` to go back to main when you are in edit/add mode.")]),
+            Spans::from(vec![Span::raw("When you edit a record, you can only edit the username, email or password. You can't edit the record name, because it's the record ID. You have to delete it and create a new one.")]),
         ])
         .alignment(Alignment::Center)
         .block(
@@ -591,14 +694,12 @@ impl Program {
         home
     }
 
-    fn render_add<'a>(edit_list_state: &ListState, data: &Vec<String>) -> Table<'a> {
-        assert!(data.len() >= 4);
-
+    fn render_add<'a>(edit_list_state: &ListState, record: &Record) -> Table<'a> {
         let table = Table::new(vec![Row::new(vec![
-            Cell::from(Span::raw(data[0].clone())),
-            Cell::from(Span::raw(data[1].clone())),
-            Cell::from(Span::raw(data[2].clone())),
-            Cell::from(Span::raw(data[3].clone())),
+            Cell::from(Span::raw(record.record_name.clone())).style(Style::default().bg(Color::DarkGray)),
+            Cell::from(Span::raw(record.username.clone().unwrap_or_default())).style(Style::default().bg(Color::DarkGray)),
+            Cell::from(Span::raw(record.email.clone().unwrap_or_default())).style(Style::default().bg(Color::DarkGray)),
+            Cell::from(Span::raw(record.password.clone().unwrap_or_default())).style(Style::default().bg(Color::DarkGray)),
         ])])
         .header(Row::new(vec![
             Cell::from(Span::styled(
@@ -623,7 +724,7 @@ impl Program {
                 .borders(Borders::ALL)
                 .style(Style::default().fg(Color::White))
                 .title("Detail information")
-                .border_type(BorderType::Plain),
+                .border_type(BorderType::Thick),
         )
         .widths(&[
             Constraint::Percentage(25),
@@ -633,13 +734,12 @@ impl Program {
         ])
         .highlight_style(
             Style::default()
-                .bg(Color::Yellow)
-                .fg(Color::Black)
+                .bg(Color::LightBlue)
+                .fg(Color::Red)
                 .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(">");
+        );
 
-        let selected_field = data.get(
+        let selected_field = record.get(
             edit_list_state
                 .selected()
                 .expect("there is always a selected edit field"),
@@ -647,7 +747,7 @@ impl Program {
 
         let selected_record = match selected_field {
             Some(field) => field.clone(),
-            None => panic!("there is always a selected edit field"),
+            None => String::new(),
         };
 
         table
