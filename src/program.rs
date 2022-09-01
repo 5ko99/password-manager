@@ -27,6 +27,7 @@ use pbkdf2::{
     Pbkdf2,
 };
 
+
 type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
@@ -679,6 +680,34 @@ impl Program {
                         self.delete_user(user.username.clone().as_ref())?;
                     } else {
                         return Err(Box::new(LogicError::NoLoggedUser {}));
+                    }
+                },
+                KeyCode::F(n) => {
+                    match n {
+                        1 | 2 | 3 => {
+                            // Copy the selected field 1 -> username, 2 -> email, 3 -> password
+                            let selected_record = self.records.get(
+                                records_list_state
+                                    .selected()
+                                    .expect("there is always a selected record"),
+                            ).unwrap();
+                            let data;
+                            match n {
+                                1 => {
+                                    data = selected_record.username.clone();
+                                }
+                                2 => {
+                                    data = selected_record.email.clone();
+                                }
+                                3 => {
+                                    data = selected_record.password.clone();
+                                }
+                                _ => unreachable!(),
+                            }
+                            // Copy the data to the clipboard
+                            terminal_clipboard::set_string(data.unwrap_or_default()).unwrap();
+                        }
+                        _ => {}
                     }
                 }
                 _ => {}
