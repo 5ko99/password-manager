@@ -1,25 +1,22 @@
-use core::time;
 use std::error::Error;
 use std::io::{self, Stdout};
 use std::sync::mpsc::{self, Receiver};
-use std::thread::sleep;
 use std::time::{Duration, Instant};
 use std::{fs, thread};
 
-use aes::cipher::typenum::{uint, True};
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 use snafu::Snafu;
-use tui::backend::{self, Backend, CrosstermBackend};
+use tui::backend::CrosstermBackend;
 use tui::layout::{Alignment, Constraint, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
 use tui::text::{Span, Spans};
 use tui::widgets::{
-    Block, BorderType, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, Tabs, TableState,
+    Block, BorderType, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, Tabs,
 };
-use tui::{Frame, Terminal};
+use tui::Terminal;
 
 use crate::record::Record;
 
@@ -47,6 +44,8 @@ enum LogicError {
     DuplicationError { name: String },
     #[snafu(display("The user '{name}' is already logged! Please logout first!"))]
     AlreadyLoggedUser { name: String },
+    #[snafu(display("Always should be a selected record"))]
+    NoSelectedRecord {},
 }
 
 pub struct Program {
@@ -108,8 +107,8 @@ impl Program {
 
     fn get_register_info() -> Result<User, Box<dyn Error>> {
         let mut username = String::new();
-        let mut master_key = String::new();
-        let mut users = Program::load_config().expect("Critical error: failed to load config");
+        let mut master_key;
+        let users = Program::load_config().expect("Critical error: failed to load config");
 
         loop {
             println!("Please enter your username: ");
@@ -455,10 +454,17 @@ impl Program {
                     }
                     MenuItem::Help => rect.render_widget(Program::render_help(), chunks[1]),
                     MenuItem::Add => {
-                        rect.render_widget(
-                            Program::render_add(&edit_list_state, &edit_record),
-                            chunks[1],
-                        );
+                        let edit_chunk = Layout::default()
+                            .direction(Direction::Horizontal)
+                            .constraints(
+                                [Constraint::Percentage(20), Constraint::Percentage(80)].as_ref(),
+                            )
+                            .split(chunks[1]);
+
+                        if let Some((left, right)) = Program::render_add(&edit_record) {
+                            rect.render_stateful_widget(left, edit_chunk[0], &mut edit_list_state);
+                            rect.render_widget(right, edit_chunk[1]);
+                        }
                     }
                 }
             })?;
@@ -556,15 +562,19 @@ impl Program {
                     }
                 }
                 KeyCode::Char('d') => {
-                    if self.active_menu_item == MenuItem::Main {
+                    if self.active_menu_item != MenuItem::Add
+                        && self.active_menu_item == MenuItem::Main
+                    {
                         if let Some(selected) = records_list_state.selected() {
                             self.records.remove(selected);
                             records_list_state.select(Some(0));
                         } else {
-                            if let Some(selected) = edit_list_state.selected() {
-                                let data = &mut edit_record[selected];
-                                data.push('d');
-                            }
+                            return Err(Box::new(LogicError::NoSelectedRecord {}));
+                        }
+                    } else {
+                        if let Some(selected) = edit_list_state.selected() {
+                            let data = &mut edit_record[selected];
+                            data.push('d');
                         }
                     }
                 }
@@ -584,45 +594,49 @@ impl Program {
                     }
                 }
                 KeyCode::Up => {
-                    if let Some(selected) = records_list_state.selected() {
-                        let records_len = self.records.len();
-                        if selected <= 0 {
-                            records_list_state.select(Some(records_len - 1));
-                        } else {
-                            records_list_state.select(Some(selected - 1));
+                    if self.active_menu_item == MenuItem::Main {
+                        if let Some(selected) = records_list_state.selected() {
+                            let records_len = self.records.len();
+                            if selected <= 0 {
+                                records_list_state.select(Some(records_len - 1));
+                            } else {
+                                records_list_state.select(Some(selected - 1));
+                            }
+                        }
+                    } else if self.active_menu_item == MenuItem::Add {
+                        if let Some(selected) = edit_list_state.selected() {
+                            let len = Record::len(); // this is hardcoded for now
+                            if selected <= 0 {
+                                edit_list_state.select(Some(len - 1));
+                            } else {
+                                edit_list_state.select(Some(selected - 1));
+                            }
                         }
                     }
                 }
                 KeyCode::Down => {
-                    if let Some(selected) = records_list_state.selected() {
-                        let records_len = self.records.len();
-                        if selected >= records_len - 1 {
-                            records_list_state.select(Some(0));
-                        } else {
-                            records_list_state.select(Some(selected + 1));
+                    if self.active_menu_item == MenuItem::Main {
+                        if let Some(selected) = records_list_state.selected() {
+                            let records_len = self.records.len();
+                            if selected >= records_len - 1 {
+                                records_list_state.select(Some(0));
+                            } else {
+                                records_list_state.select(Some(selected + 1));
+                            }
+                        }
+                    } else if self.active_menu_item == MenuItem::Add {
+                        if let Some(selected) = edit_list_state.selected() {
+                            let len = Record::len(); // this is hardcoded for now
+                            if selected >= len - 1 {
+                                edit_list_state.select(Some(0));
+                            } else {
+                                edit_list_state.select(Some(selected + 1));
+                            }
                         }
                     }
                 }
-                KeyCode::Left => {
-                    if let Some(selected) = edit_list_state.selected() {
-                        let len = Record::len(); // this is hardcoded for now
-                        if selected <= 0 {
-                            edit_list_state.select(Some(len - 1));
-                        } else {
-                            edit_list_state.select(Some(selected - 1));
-                        }
-                    }
-                }
-                KeyCode::Right => {
-                    if let Some(selected) = edit_list_state.selected() {
-                        let len = Record::len(); // this is hardcoded for now
-                        if selected >= len - 1 {
-                            edit_list_state.select(Some(0));
-                        } else {
-                            edit_list_state.select(Some(selected + 1));
-                        }
-                    }
-                }
+                KeyCode::Left => {}
+                KeyCode::Right => {}
                 KeyCode::Char(c) => {
                     if self.active_menu_item == MenuItem::Add {
                         if let Some(selected) = edit_list_state.selected() {
@@ -660,6 +674,13 @@ impl Program {
                         edit_record.clear();
                     }
                 }
+                KeyCode::Delete => {
+                    if let Some(user) = self.logged_user.as_ref() {
+                        self.delete_user(user.username.clone().as_ref())?;
+                    } else {
+                        return Err(Box::new(LogicError::NoLoggedUser {}));
+                    }
+                }
                 _ => {}
             },
             ProgramEvent::Tick => {}
@@ -681,7 +702,9 @@ impl Program {
             Spans::from(vec![Span::raw("Press `left` and `right` to select a field.")]),
             Spans::from(vec![Span::raw("Press `enter` when you are in edit/add mode to save the record.")]),
             Spans::from(vec![Span::raw("Press `esc` to go back to main when you are in edit/add mode.")]),
-            Spans::from(vec![Span::raw("When you edit a record, you can only edit the username, email or password. You can't edit the record name, because it's the record ID. You have to delete it and create a new one.")]),
+            Spans::from(vec![Span::raw("When you edit a record, you can only edit the username, email or password.")]),
+            Spans::from(vec![Span::raw("You can't edit the record name, because it's the record ID. You have to delete it and create a new one.")]),
+            Spans::from(vec![Span::raw("Press `delete` to delete your account and all saved passwords.")]),
         ])
         .alignment(Alignment::Center)
         .block(
@@ -694,63 +717,67 @@ impl Program {
         home
     }
 
-    fn render_add<'a>(edit_list_state: &ListState, record: &Record) -> Table<'a> {
-        let table = Table::new(vec![Row::new(vec![
-            Cell::from(Span::raw(record.record_name.clone())).style(Style::default().bg(Color::DarkGray)),
-            Cell::from(Span::raw(record.username.clone().unwrap_or_default())).style(Style::default().bg(Color::DarkGray)),
-            Cell::from(Span::raw(record.email.clone().unwrap_or_default())).style(Style::default().bg(Color::DarkGray)),
-            Cell::from(Span::raw(record.password.clone().unwrap_or_default())).style(Style::default().bg(Color::DarkGray)),
-        ])])
-        .header(Row::new(vec![
-            Cell::from(Span::styled(
-                "Name",
-                Style::default().add_modifier(Modifier::BOLD),
-            )),
-            Cell::from(Span::styled(
-                "Username",
-                Style::default().add_modifier(Modifier::BOLD),
-            )),
-            Cell::from(Span::styled(
-                "Email",
-                Style::default().add_modifier(Modifier::BOLD),
-            )),
-            Cell::from(Span::styled(
-                "Password",
-                Style::default().add_modifier(Modifier::BOLD),
-            )),
-        ]))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .style(Style::default().fg(Color::White))
-                .title("Detail information")
-                .border_type(BorderType::Thick),
-        )
-        .widths(&[
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-        ])
-        .highlight_style(
-            Style::default()
-                .bg(Color::LightBlue)
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD),
-        );
+    fn render_add<'a>(record: &Record) -> Option<(List<'a>, List<'a>)> {
+        let mut items: Vec<_> = Vec::new();
+        // We need to render something for each field in the record, even if the field is empty for now.
+        if record.record_name.is_empty() {
+            items.push(ListItem::new("_".to_string()));
+        } else {
+            items.push(ListItem::new(record.record_name.clone()));
+        }
+        if record.username.is_none() || record.username.as_ref().unwrap().is_empty() {
+            items.push(ListItem::new("_".to_string()));
+        } else {
+            items.push(ListItem::new(
+                record.username.clone().unwrap_or("_".to_string()),
+            ));
+        }
+        if record.email.is_none() || record.email.as_ref().unwrap().is_empty() {
+            items.push(ListItem::new("_".to_string()));
+        } else {
+            items.push(ListItem::new(
+                record.email.clone().unwrap_or("_".to_string()),
+            ));
+        }
+        if record.password.is_none() || record.password.as_ref().unwrap().is_empty() {
+            items.push(ListItem::new("_".to_string()));
+        } else {
+            items.push(ListItem::new(
+                record.password.clone().unwrap_or("_".to_string()),
+            ));
+        }
 
-        let selected_field = record.get(
-            edit_list_state
-                .selected()
-                .expect("there is always a selected edit field"),
-        );
+        let mut labels: Vec<_> = Vec::new();
+        labels.push(ListItem::new("Record Name".to_string()));
+        labels.push(ListItem::new("Username".to_string()));
+        labels.push(ListItem::new("Email".to_string()));
+        labels.push(ListItem::new("Password".to_string()));
 
-        let selected_record = match selected_field {
-            Some(field) => field.clone(),
-            None => String::new(),
-        };
+        let records = Block::default()
+            .borders(Borders::ALL)
+            .style(Style::default().fg(Color::White))
+            .title("Records list")
+            .border_type(BorderType::Plain);
 
-        table
+        let labels_block = Block::default()
+            .borders(Borders::ALL)
+            .title("Labels")
+            .border_type(BorderType::Plain);
+
+        let list = List::new(items).block(records);
+
+        let labels = List::new(labels)
+            .block(labels_block)
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Yellow)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol(">")
+            .repeat_highlight_symbol(true);
+
+        Some((labels, list))
     }
 
     fn render_records<'a>(
@@ -830,9 +857,9 @@ impl Program {
                 .border_type(BorderType::Plain),
         )
         .widths(&[
-            Constraint::Percentage(33),
-            Constraint::Percentage(34),
-            Constraint::Percentage(33),
+            Constraint::Percentage(22),
+            Constraint::Percentage(55),
+            Constraint::Percentage(23),
         ]);
 
         Some((list, records_detail))
