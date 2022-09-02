@@ -7,6 +7,9 @@ use sha256::digest;
 const USERNAME : &str = "testuser";
 const PASSWORD : &str = "1234";
 
+const USERNAME2: &str = "testuser2";
+const PASSWORD2: &str = "4321";
+
 #[test]
 fn test_add_record() {
     let mut program = Program::default();
@@ -133,4 +136,43 @@ fn test_register_new_user() {
         .is_ok()); // now we can login again
 
     assert!(program.delete_user("username").is_ok()); // delete the user for the next tests
+}
+
+// Some tests for the encryption and decryption
+#[test]
+fn test_encryption_and_decryption() {
+    let mut program = Program::default();
+    assert!(program
+        .login(USERNAME.to_string(), PASSWORD.to_string(), digest(PASSWORD))
+        .is_ok());
+    let result = program.encrypt_data(&"pass".to_string());
+    assert_eq!(program.decrypt_data(&result), "pass".to_string());
+}
+
+#[test]
+#[should_panic]
+fn test_encryption_and_decryption_but_with_wrong_user() {
+    let mut program = Program::default();
+    assert!(program
+        .login(USERNAME.to_string(), PASSWORD.to_string(), digest(PASSWORD))
+        .is_ok());
+    
+    let result = program.encrypt_data(&"pass".to_string());
+
+    assert!(program.logout().is_ok());
+    assert!(program
+        .login(USERNAME2.to_string(), PASSWORD2.to_string(), digest(PASSWORD2))
+        .is_ok());
+    
+    assert_ne!(program.decrypt_data(&result), "pass".to_string());
+}
+
+#[test]
+fn test_encryption_and_decryption_with_empty_string() {
+    let mut program = Program::default();
+    assert!(program
+        .login(USERNAME.to_string(), PASSWORD.to_string(), digest(PASSWORD))
+        .is_ok());
+    let result = program.encrypt_data(&"".to_string());
+    assert_eq!(program.decrypt_data(&result), "".to_string());
 }

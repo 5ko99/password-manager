@@ -83,6 +83,7 @@ enum MenuItem {
     Help,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Popup {
     DeleteARecord,
     DeleteAnAccount,
@@ -233,9 +234,20 @@ impl Program {
                             );
                             rect.render_widget(right, records_chunk[1]);
                         }
-                        if self.popup.is_some() {
-                            let popup_content = Program::render_popup();
-                            rect.render_widget(popup_content, chunks[2]);
+                        if let Some(popup) = &self.popup {
+                            match popup {
+                                Popup::RecordAlreadyExists { name: _ } => {
+                                    if let Some(help_paragraph) =
+                                        Program::render_help_line(MenuItem::Main)
+                                    {
+                                        rect.render_widget(help_paragraph, chunks[2]);
+                                    }
+                                }
+                                _ => {
+                                    let popup_content = Program::render_popup();
+                                    rect.render_widget(popup_content, chunks[2]);
+                                }
+                            }
                         } else if let Some(help_paragraph) =
                             Program::render_help_line(MenuItem::Main)
                         {
