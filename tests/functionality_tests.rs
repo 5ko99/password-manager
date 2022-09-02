@@ -177,6 +177,8 @@ fn test_encryption_and_decryption_with_empty_string() {
     assert_eq!(program.decrypt_data(&result), "".to_string());
 }
 
+//Searchin tests
+
 #[test]
 fn test_simple_search_function() {
     let records = vec![
@@ -189,7 +191,7 @@ fn test_simple_search_function() {
     let result = Program::search(&records, needle);
 
     assert_eq!(result.len(), 1);
-    assert_eq!(result[0], 3);
+    assert_eq!(result[0], 2);
 }
 
 #[test]
@@ -205,8 +207,8 @@ fn test_search_with_two_matches() {
     let result = Program::search(&records, needle);
 
     assert_eq!(result.len(), 2);
-    assert_eq!(result[0], 3);
-    assert_eq!(result[1], 5);
+    assert_eq!(result[0], 2);
+    assert_eq!(result[1], 4);
 }
 
 #[test]
@@ -225,10 +227,10 @@ fn test_search_with_four_matches() {
     let result = Program::search(&records, needle);
 
     assert_eq!(result.len(), 4);
-    assert_eq!(result[0], 1);
-    assert_eq!(result[1], 4);
-    assert_eq!(result[2], 6);
-    assert_eq!(result[3], 8);
+    assert_eq!(result[0], 0);
+    assert_eq!(result[1], 3);
+    assert_eq!(result[2], 5);
+    assert_eq!(result[3], 7);
 }
 
 #[test]
@@ -243,9 +245,9 @@ fn test_search_with_multiple_matches_2() {
     let result = Program::search(&records, needle);
 
     assert_eq!(result.len(), 3);
-    assert_eq!(result[0], 1);
-    assert_eq!(result[1], 2);
-    assert_eq!(result[2], 4);
+    assert_eq!(result[0], 0);
+    assert_eq!(result[1], 1);
+    assert_eq!(result[2], 3);
 }
 
 #[test]
@@ -262,7 +264,7 @@ fn test_search_with_four_matches_and_two_matches_in_word() {
     let result = Program::search(&records, needle);
 
     assert_eq!(result.len(), 3);
-    assert_eq!(result[0], 3);
-    assert_eq!(result[1], 4);
-    assert_eq!(result[2], 6);
+    assert_eq!(result[0], 2);
+    assert_eq!(result[1], 3);
+    assert_eq!(result[2], 5);
 }

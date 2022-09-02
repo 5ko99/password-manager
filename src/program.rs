@@ -59,6 +59,8 @@ pub struct Program {
     edit_mode: bool,
     popup: Option<Popup>,
     search_term: String,
+    search_results: Vec<usize>,
+    search_results_index: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -116,6 +118,8 @@ impl Program {
             edit_mode: false,
             popup: None,
             search_term: String::new(),
+            search_results: Vec::new(),
+            search_results_index: None,
         }
     }
 
@@ -706,16 +710,48 @@ impl Program {
                         }
                     }
                 }
-                KeyCode::Left => match self.active_menu_item {
-                    MenuItem::Main => self.active_menu_item = MenuItem::Help,
-                    MenuItem::Add => self.active_menu_item = MenuItem::Main,
-                    MenuItem::Help => self.active_menu_item = MenuItem::Add,
-                },
-                KeyCode::Right => match self.active_menu_item {
-                    MenuItem::Main => self.active_menu_item = MenuItem::Add,
-                    MenuItem::Add => self.active_menu_item = MenuItem::Help,
-                    MenuItem::Help => self.active_menu_item = MenuItem::Main,
-                },
+                KeyCode::Left => {
+                    if self.active_menu_item == MenuItem::Main
+                        && self.popup == Some(Popup::Search)
+                        && !self.search_results.is_empty()
+                    {
+                        if let Some(selected) = self.search_results_index {
+                            if selected == 0 {
+                                self.search_results_index = Some(self.search_results.len() - 1);
+                            } else {
+                                self.search_results_index = Some(selected - 1);
+                            }
+                            records_list_state.select(Some(self.search_results[self.search_results_index.unwrap()]));
+                        }
+                    } else {
+                        match self.active_menu_item {
+                            MenuItem::Main => self.active_menu_item = MenuItem::Help,
+                            MenuItem::Add => self.active_menu_item = MenuItem::Main,
+                            MenuItem::Help => self.active_menu_item = MenuItem::Add,
+                        }
+                    }
+                }
+                KeyCode::Right => {
+                    if self.active_menu_item == MenuItem::Main
+                        && self.popup == Some(Popup::Search)
+                        && !self.search_results.is_empty()
+                    {
+                        if let Some(selected) = self.search_results_index {
+                            if selected == self.search_results.len() - 1 {
+                                self.search_results_index = Some(0);
+                            } else {
+                                self.search_results_index = Some(selected + 1);
+                            }
+                            records_list_state.select(Some(self.search_results[self.search_results_index.unwrap()]));
+                        }
+                    } else {
+                        match self.active_menu_item {
+                            MenuItem::Main => self.active_menu_item = MenuItem::Add,
+                            MenuItem::Add => self.active_menu_item = MenuItem::Help,
+                            MenuItem::Help => self.active_menu_item = MenuItem::Main,
+                        }
+                    }
+                }
                 KeyCode::Char(c) => {
                     if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
                     {
@@ -740,19 +776,17 @@ impl Program {
                         self.active_menu_item = MenuItem::Main;
                     } else if self.active_menu_item == MenuItem::Main {
                         self.popup = None;
+                        self.search_results.clear();
+                        self.search_results_index = None;
                     }
                 }
                 KeyCode::Enter => {
                     if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
                     {
-                        let index = self
-                            .records
-                            .iter()
-                            .position(|r| r.record_name == self.search_term);
-                        if let Some(index) = index {
-                            self.search_term.clear();
-                            self.popup = None;
-                            records_list_state.select(Some(index));
+                        self.search_results = Program::search(&self.records, &self.search_term);
+                        if !self.search_results.is_empty() {
+                            self.search_results_index = Some(0);
+                            records_list_state.select(Some(self.search_results[0]));
                         } else {
                             self.popup = None;
                         }
@@ -832,6 +866,7 @@ impl Program {
             Spans::from(vec![Span::raw("Press `d` to delete the currently selected record.")]),
             Spans::from(vec![Span::raw("Press `e` to edit the currently selected record.")]),
             Spans::from(vec![Span::raw("Press 'f' to open search box. Type in the search term and press enter to search. To cancel search press ESC.")]),
+            Spans::from(vec![Span::raw("When you are in search mode, use `left` and `right` arrows to navigate through all matches.")]),
             Spans::from(vec![Span::raw("When you view a record press F1 to copy the username, F2 to copy the email, F3 to copy the password.")]),
             Spans::from(vec![Span::raw("Press `enter` when you are in edit/add mode to save the record.")]),
             Spans::from(vec![Span::raw("Press `esc` to go back to main when you are in edit/add mode.")]),
@@ -855,12 +890,10 @@ impl Program {
         match active_menu_item {
             MenuItem::Main => {
                 let paragraph = Paragraph::new(vec![
-                    Spans::from(vec![Span::raw("Press 'a' to add a new record. Press 'e' to start editing the current record.")]),
-                    Spans::from(vec![Span::raw("Press 'up' and 'down' arrows to navigate through fields. Press 'd' to delete the current record.")]),
+                    Spans::from(vec![Span::raw("Press 'a' to add a new record. Press 'e' to start editing the current record. Press 'f' to open search box.")]),
+                    Spans::from(vec![Span::raw("To cancel search press ESC. Press 'up' and 'down' arrows to navigate through fields. Press 'd' to delete the current record.")]),
                     Spans::from(vec![Span::raw("Press 's'` to toggle showing the password. Use 'left' and 'right' arrows to navigate through menus.")]),
-                    Spans::from(vec![Span::raw("When you view a record press F1 to copy the username, F2 to copy the email, F3 to copy the password.")]),
-                    Spans::from(vec![Span::raw("Press 'f' to open search box. Type in the search term and press enter to search. To cancel search press ESC.")]),
-                    Spans::from(vec![Span::raw("Press 'q' to quit. Press 'h' to see the help page for more information.")]),
+                    Spans::from(vec![Span::raw("When you view a record press F1 to copy the username, F2 to copy the email, F3 to copy the password. Press 'q' to quit. Press 'h' to see the help page for more information.")]),
                 ])
                 .alignment(Alignment::Left)
                 .block(
@@ -1247,14 +1280,12 @@ impl Program {
 
         for (i, _) in v {
             // the boolean flag is needed to avoid duplicates. for example if we have one record 'ab ab' and other 'ab' and we search for 'ab' we will get two indexes for the first record
-            let mut count = 1;
-            for (start, end, flag) in &mut indexes {
+            for (count,(start, end, flag)) in indexes.iter_mut().enumerate() {
                 if !*flag && i >= *start && i <= *end {
                     result.push(count);
                     *flag = true;
                     break;
                 }
-                count += 1;
             }
         }
         result
