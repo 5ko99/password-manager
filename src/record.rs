@@ -19,7 +19,7 @@ impl PartialEq for Record {
 impl Index<usize> for Record {
     type Output = String;
 
-    fn index<'a>(&'a self, _index: usize) -> &'a String {
+    fn index<'a>(&'_ self, _index: usize) -> &'_ String {
         if let Some(value) = self.get(_index) {
             value
         } else {
@@ -29,7 +29,7 @@ impl Index<usize> for Record {
 }
 
 impl IndexMut<usize> for Record {
-    fn index_mut<'a>(&'a mut self, _index: usize) -> &'a mut String {
+    fn index_mut<'a>(&'_ mut self, _index: usize) -> &'_ mut String {
         if let Some(value) = self.get_mut(_index) {
             value
         } else {
@@ -46,41 +46,41 @@ impl Record {
         password: Option<String>,
     ) -> Record {
         let mut rec = Record {
-            record_name: record_name.clone(),
+            record_name,
             ..Default::default()
         };
         if username.is_some() {
-            rec.username = username.clone();
+            rec.username = username;
         }
         if email.is_some() {
-            rec.email = email.clone();
+            rec.email = email;
         }
         if password.is_some() {
-            rec.password = password.clone();
+            rec.password = password;
         }
         rec
     }
 
-    pub fn get<'a>(&'a self, _index: usize) -> Option<&'a String> {
+    pub fn get(&'_ self, _index: usize) -> Option<&'_ String> {
         match _index {
             0 => Some(&self.record_name),
             1 => {
                 if self.username.is_some() {
-                    Some(&self.username.as_ref().unwrap())
+                    Some(self.username.as_ref().unwrap())
                 } else {
                     None
                 }
             }
             2 => {
                 if self.email.is_some() {
-                    Some(&self.email.as_ref().unwrap())
+                    Some(self.email.as_ref().unwrap())
                 } else {
                     None
                 }
             }
             3 => {
                 if self.password.is_some() {
-                    Some(&self.password.as_ref().unwrap())
+                    Some(self.password.as_ref().unwrap())
                 } else {
                     None
                 }
@@ -89,16 +89,16 @@ impl Record {
         }
     }
 
-    pub fn get_mut<'a>(&'a mut self, _index: usize) -> Option<&'a mut String> {
+    pub fn get_mut(&'_ mut self, _index: usize) -> Option<&'_ mut String> {
         match _index {
             0 => Some(&mut self.record_name),
             1 => {
                 if self.username.is_none() {
                     // If the username is None, we create a new String and assign it to the username
                     self.username = Some(String::new());
-                    return self.username.as_mut();
+                    self.username.as_mut()
                 } else if let Some(username) = &mut self.username {
-                    return Some(username);
+                    Some(username)
                 } else {
                     panic!("Unknown error!");
                 }
@@ -107,9 +107,9 @@ impl Record {
                 if self.email.is_none() {
                     // If the email is None, we create a new String and assign it to the email
                     self.email = Some(String::new());
-                    return self.email.as_mut();
+                    self.email.as_mut()
                 } else if let Some(email) = &mut self.email {
-                    return Some(email);
+                    Some(email)
                 } else {
                     panic!("Unknown error!");
                 }
@@ -118,9 +118,9 @@ impl Record {
                 if self.password.is_none() {
                     // If the password is None, we create a new String and assign it to the password
                     self.password = Some(String::new());
-                    return self.password.as_mut();
+                    self.password.as_mut()
                 } else if let Some(password) = &mut self.password {
-                    return Some(password);
+                    Some(password)
                 } else {
                     panic!("Unknown error!");
                 }

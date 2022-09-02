@@ -34,7 +34,7 @@ const PATH_TO_CONFIG: &str = "./data/.conf";
 
 const MINIMUM_PASSWORD_LENGTH: usize = 4;
 
-const MENU_TITLES: &'static [&str] = &["Main", "Add/Edit", "Help"];
+const MENU_TITLES: &[&str] = &["Main", "Add/Edit", "Help"];
 
 #[derive(Debug, Snafu)]
 enum LogicError {
@@ -149,10 +149,8 @@ impl Program {
                     }
                 }
 
-                if last_tick.elapsed() >= tick_rate {
-                    if let Ok(_) = tx.send(ProgramEvent::Tick) {
-                        last_tick = Instant::now();
-                    }
+                if last_tick.elapsed() >= tick_rate && tx.send(ProgramEvent::Tick).is_ok() {
+                    last_tick = Instant::now();
                 }
             }
         });
@@ -193,7 +191,7 @@ impl Program {
                     .collect();
 
                 let tabs = Tabs::new(menu)
-                    .select(self.active_menu_item.clone().into())
+                    .select(self.active_menu_item.into())
                     .block(Block::default().title("Menu").borders(Borders::ALL))
                     .style(Style::default().fg(Color::White))
                     .highlight_style(
@@ -300,7 +298,7 @@ impl Program {
 
         let user = User {
             username: username.to_string(),
-            password: master_key.to_string(),
+            password: master_key,
         };
 
         Ok(user)
@@ -347,7 +345,7 @@ impl Program {
         Ok(())
     }
 
-    fn users_exist(username: &str, users: &Vec<User>) -> bool {
+    fn users_exist(username: &str, users: &[User]) -> bool {
         users.iter().any(|u| u.username == username)
     }
 
@@ -387,13 +385,13 @@ impl Program {
             .iter()
             .find(|u| u.username == username && u.password == master_key_hash);
         if user.is_none() {
-            return Err(Box::new(io::Error::new(
+            Err(Box::new(io::Error::new(
                 io::ErrorKind::Other,
                 "Username not found or wrong password!",
-            )));
+            )))
         } else {
             let user = User {
-                username: username,
+                username,
                 password: master_key,
             };
             self.logged_user = Some(user); // Login successful.
@@ -420,18 +418,18 @@ impl Program {
     pub fn add_record(&mut self, record: Record) -> Result<&Record, Box<dyn Error>> {
         if self.logged_user.is_some() {
             if self.records.contains(&record) {
-                return Err(Box::new(LogicError::DuplicationError {
+                Err(Box::new(LogicError::DuplicationError {
                     name: record.record_name,
-                }));
+                }))
             } else {
                 self.records.push(record);
-                return Ok(&self
+                return Ok(self
                     .records
                     .last()
                     .expect("Critical error: failed to get last record"));
             }
         } else {
-            return Err(Box::new(LogicError::NoLoggedUser));
+            Err(Box::new(LogicError::NoLoggedUser))
         }
     }
 
@@ -440,7 +438,7 @@ impl Program {
             self.records.retain(|r| r.record_name != record_name);
             Ok(())
         } else {
-            return Err(Box::new(LogicError::NoLoggedUser));
+            Err(Box::new(LogicError::NoLoggedUser))
         }
     }
 
@@ -469,52 +467,42 @@ impl Program {
                 KeyCode::Char('q') => {
                     if self.active_menu_item != MenuItem::Add {
                         self.should_quit = true;
-                    } else {
-                        if let Some(selected) = edit_list_state.selected() {
-                            let data = &mut edit_record[selected];
-                            data.push('q');
-                        }
+                    } else if let Some(selected) = edit_list_state.selected() {
+                        let data = &mut edit_record[selected];
+                        data.push('q');
                     }
                 }
                 KeyCode::Char('h') => {
                     if self.active_menu_item != MenuItem::Add {
                         self.active_menu_item = MenuItem::Help;
-                    } else {
-                        if let Some(selected) = edit_list_state.selected() {
-                            let data = &mut edit_record[selected];
-                            data.push('h');
-                        }
+                    } else if let Some(selected) = edit_list_state.selected() {
+                        let data = &mut edit_record[selected];
+                        data.push('h');
                     }
                 }
                 KeyCode::Char('a') => {
                     if self.active_menu_item != MenuItem::Add {
                         self.active_menu_item = MenuItem::Add;
                         edit_list_state.select(Some(0));
-                    } else {
-                        if let Some(selected) = edit_list_state.selected() {
-                            let data = &mut edit_record[selected];
-                            data.push('a');
-                        }
+                    } else if let Some(selected) = edit_list_state.selected() {
+                        let data = &mut edit_record[selected];
+                        data.push('a');
                     }
                 }
                 KeyCode::Char('m') => {
                     if self.active_menu_item != MenuItem::Add {
                         self.active_menu_item = MenuItem::Main;
-                    } else {
-                        if let Some(selected) = edit_list_state.selected() {
-                            let data = &mut edit_record[selected];
-                            data.push('m');
-                        }
+                    } else if let Some(selected) = edit_list_state.selected() {
+                        let data = &mut edit_record[selected];
+                        data.push('m');
                     }
                 }
                 KeyCode::Char('s') => {
                     if self.active_menu_item != MenuItem::Add {
                         self.show_password = !self.show_password;
-                    } else {
-                        if let Some(selected) = edit_list_state.selected() {
-                            let data = &mut edit_record[selected];
-                            data.push('s');
-                        }
+                    } else if let Some(selected) = edit_list_state.selected() {
+                        let data = &mut edit_record[selected];
+                        data.push('s');
                     }
                 }
                 KeyCode::Char('d') => {
@@ -527,11 +515,9 @@ impl Program {
                         } else {
                             return Err(Box::new(LogicError::NoSelectedRecord {}));
                         }
-                    } else {
-                        if let Some(selected) = edit_list_state.selected() {
-                            let data = &mut edit_record[selected];
-                            data.push('d');
-                        }
+                    } else if let Some(selected) = edit_list_state.selected() {
+                        let data = &mut edit_record[selected];
+                        data.push('d');
                     }
                 }
                 KeyCode::Char('e') => {
@@ -542,18 +528,16 @@ impl Program {
                             edit_record.clone_from(&self.records[selected]);
                             self.edit_mode = true;
                         }
-                    } else {
-                        if let Some(selected) = edit_list_state.selected() {
-                            let data = &mut edit_record[selected];
-                            data.push('e');
-                        }
+                    } else if let Some(selected) = edit_list_state.selected() {
+                        let data = &mut edit_record[selected];
+                        data.push('e');
                     }
                 }
                 KeyCode::Up => {
                     if self.active_menu_item == MenuItem::Main {
                         if let Some(selected) = records_list_state.selected() {
                             let records_len = self.records.len();
-                            if selected <= 0 {
+                            if selected == 0 {
                                 records_list_state.select(Some(records_len - 1));
                             } else {
                                 records_list_state.select(Some(selected - 1));
@@ -562,7 +546,7 @@ impl Program {
                     } else if self.active_menu_item == MenuItem::Add {
                         if let Some(selected) = edit_list_state.selected() {
                             let len = Record::len(); // this is hardcoded for now
-                            if selected <= 0 {
+                            if selected == 0 {
                                 edit_list_state.select(Some(len - 1));
                             } else {
                                 edit_list_state.select(Some(selected - 1));
@@ -615,15 +599,12 @@ impl Program {
                     }
                 }
                 KeyCode::Enter => {
-                    if self.active_menu_item == MenuItem::Add && edit_record.record_name.len() > 0 {
+                    if self.active_menu_item == MenuItem::Add && !edit_record.record_name.is_empty() {
                         self.active_menu_item = MenuItem::Main;
                         if self.edit_mode {
-                            self.records
+                            if let Some(r) = self.records
                                 .iter_mut()
-                                .find(|r| r.record_name == edit_record.record_name)
-                                .map(|r| {
-                                    r.clone_from(edit_record);
-                                });
+                                .find(|r| r.record_name == edit_record.record_name) { r.clone_from(edit_record); }
                         } else {
                             self.records.push(edit_record.clone());
                         }
@@ -649,19 +630,18 @@ impl Program {
                                         .expect("there is always a selected record"),
                                 )
                                 .unwrap();
-                            let data;
-                            match n {
+                            let data = match n {
                                 1 => {
-                                    data = selected_record.username.clone();
+                                    selected_record.username.clone()
                                 }
                                 2 => {
-                                    data = selected_record.email.clone();
+                                    selected_record.email.clone()
                                 }
                                 3 => {
-                                    data = selected_record.password.clone();
+                                    selected_record.password.clone()
                                 }
                                 _ => unreachable!(),
-                            }
+                            };
                             // Copy the data to the clipboard
                             terminal_clipboard::set_string(data.unwrap_or_default()).unwrap();
                         }
@@ -716,29 +696,30 @@ impl Program {
             items.push(ListItem::new("_".to_string()));
         } else {
             items.push(ListItem::new(
-                record.username.clone().unwrap_or("_".to_string()),
+                record.username.clone().unwrap_or_else(|| "_".to_string()),
             ));
         }
         if record.email.is_none() || record.email.as_ref().unwrap().is_empty() {
             items.push(ListItem::new("_".to_string()));
         } else {
             items.push(ListItem::new(
-                record.email.clone().unwrap_or("_".to_string()),
+                record.email.clone().unwrap_or_else(|| "_".to_string()),
             ));
         }
         if record.password.is_none() || record.password.as_ref().unwrap().is_empty() {
             items.push(ListItem::new("_".to_string()));
         } else {
             items.push(ListItem::new(
-                record.password.clone().unwrap_or("_".to_string()),
+                record.password.clone().unwrap_or_else(|| "_".to_string()),
             ));
         }
 
-        let mut labels: Vec<_> = Vec::new();
-        labels.push(ListItem::new("Record Name".to_string()));
-        labels.push(ListItem::new("Username".to_string()));
-        labels.push(ListItem::new("Email".to_string()));
-        labels.push(ListItem::new("Password".to_string()));
+        let labels: Vec<_> = vec![
+            ListItem::new("Record name"),
+            ListItem::new("Username"),
+            ListItem::new("Email"),
+            ListItem::new("Password"),
+        ];
 
         let records = Block::default()
             .borders(Borders::ALL)
@@ -767,7 +748,7 @@ impl Program {
 
     fn render_records<'a>(
         records_list_state: &ListState,
-        records_list: &Vec<Record>,
+        records_list: &[Record],
         show_password: &bool,
     ) -> Option<(List<'a>, Table<'a>)> {
         let records = Block::default()
@@ -804,19 +785,18 @@ impl Program {
                 .add_modifier(Modifier::BOLD),
         );
 
-        let password: String;
-        if *show_password {
-            password = selected_record.password.unwrap_or_default().to_string();
+        let password = if *show_password {
+            selected_record.password.unwrap_or_default()
         } else {
-            password = "********".to_string();
-        }
+            "********".to_string()
+        };
 
         let records_detail = Table::new(vec![Row::new(vec![
             Cell::from(Span::raw(
-                selected_record.username.unwrap_or_default().to_string(),
+                selected_record.username.unwrap_or_default(),
             )),
             Cell::from(Span::raw(
-                selected_record.email.unwrap_or_default().to_string(),
+                selected_record.email.unwrap_or_default(),
             )),
             Cell::from(Span::raw(password)),
         ])])
@@ -927,13 +907,11 @@ impl Program {
 
         let mut key: [u8; 16] = [0; 16];
 
-        for i in 0..16 {
-            key[i] = password_hash.as_bytes()[i];
-        }
+        key[..16].copy_from_slice(&password_hash.as_bytes()[..16]);
 
         let iv = username_for_salt.as_bytes();
 
-        let cipher = Aes128CbcDec::new_from_slices(&key, &iv);
+        let cipher = Aes128CbcDec::new_from_slices(&key, iv);
 
         let cipher = match cipher {
             Ok(cipher) => cipher,
@@ -949,8 +927,8 @@ impl Program {
 
         let mut decrypt_block_string: String = String::new();
 
-        for i in 0..decrypt_block.len() {
-            decrypt_block_string.push(decrypt_block[i] as char);
+        for item in &decrypt_block {
+            decrypt_block_string.push(*item as char);
         }
 
         decrypt_block_string
@@ -991,13 +969,11 @@ impl Program {
 
         let mut key: [u8; 16] = [0; 16];
 
-        for i in 0..16 {
-            key[i] = password_hash.as_bytes()[i];
-        }
+        key[..16].copy_from_slice(&password_hash.as_bytes()[..16]);
 
         let iv = username_for_salt.as_bytes();
 
-        let cipher = Aes128CbcEnc::new_from_slices(&key, &iv);
+        let cipher = Aes128CbcEnc::new_from_slices(&key, iv);
 
         let cipher = match cipher {
             Ok(cipher) => cipher,
