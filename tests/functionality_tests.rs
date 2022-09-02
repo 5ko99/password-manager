@@ -176,3 +176,93 @@ fn test_encryption_and_decryption_with_empty_string() {
     let result = program.encrypt_data(&"".to_string());
     assert_eq!(program.decrypt_data(&result), "".to_string());
 }
+
+#[test]
+fn test_simple_search_function() {
+    let records = vec![
+        Record::new("abc".to_string(), None, None, None),
+        Record::new("efg".to_string(), None, None, None),
+        Record::new("pet".to_string(), None, None, None),
+        Record::new("wee".to_string(), None, None, None),
+    ];
+    let needle = "pet";
+    let result = Program::search(&records, needle);
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0], 3);
+}
+
+#[test]
+fn test_search_with_two_matches() {
+    let records = vec![
+        Record::new("abc".to_string(), None, None, None),
+        Record::new("efg".to_string(), None, None, None),
+        Record::new("pet".to_string(), None, None, None),
+        Record::new("wee".to_string(), None, None, None),
+        Record::new("petko".to_string(), None, None, None),
+    ];
+    let needle = "pet";
+    let result = Program::search(&records, needle);
+
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0], 3);
+    assert_eq!(result[1], 5);
+}
+
+#[test]
+fn test_search_with_four_matches() {
+    let records = vec![
+        Record::new("petko".to_string(), None, None, None), // 1
+        Record::new("gosho".to_string(), None, None, None),
+        Record::new("chefo".to_string(), None, None, None),
+        Record::new("pet".to_string(), None, None, None), // 4
+        Record::new("Vili".to_string(), None, None, None),
+        Record::new("petko".to_string(), None, None, None), // 6
+        Record::new("ivan".to_string(), None, None, None),
+        Record::new("petko".to_string(), None, None, None), // 8
+    ];
+    let needle = "pet";
+    let result = Program::search(&records, needle);
+
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0], 1);
+    assert_eq!(result[1], 4);
+    assert_eq!(result[2], 6);
+    assert_eq!(result[3], 8);
+}
+
+#[test]
+fn test_search_with_multiple_matches_2() {
+    let records = vec![
+        Record::new("BBC".to_string(), None, None, None), // 1
+        Record::new("BBC2".to_string(), None, None, None),
+        Record::new("BNT".to_string(), None, None, None),
+        Record::new("BBC3".to_string(), None, None, None), // 4
+    ];
+    let needle = "BBC";
+    let result = Program::search(&records, needle);
+
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0], 1);
+    assert_eq!(result[1], 2);
+    assert_eq!(result[2], 4);
+}
+
+#[test]
+fn test_search_with_four_matches_and_two_matches_in_word() {
+    let records = vec![
+        Record::new("gosho".to_string(), None, None, None), // 1 no match
+        Record::new("chefo".to_string(), None, None, None), // 2 no match
+        Record::new("petko petkov petkov".to_string(), None, None, None), // match 3
+        Record::new("vili petkov".to_string(), None, None, None), // match 4
+        Record::new("ivan".to_string(), None, None, None), // 5 no match
+        Record::new("petko".to_string(), None, None, None), // 6 match
+    ];
+    let needle = "petko";
+    let result = Program::search(&records, needle);
+
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0], 3);
+    assert_eq!(result[1], 4);
+    assert_eq!(result[2], 6);
+}

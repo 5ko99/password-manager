@@ -6,6 +6,7 @@ use std::{fs, thread};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use naive_opt::string_search_indices;
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 use snafu::Snafu;
@@ -57,6 +58,7 @@ pub struct Program {
     show_password: bool,
     edit_mode: bool,
     popup: Option<Popup>,
+    search_term: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -89,6 +91,7 @@ enum Popup {
     DeleteAnAccount,
     Exit,
     RecordAlreadyExists { name: String },
+    Search,
 }
 
 impl From<MenuItem> for usize {
@@ -112,6 +115,7 @@ impl Program {
             show_password: false,
             edit_mode: false,
             popup: None,
+            search_term: String::new(),
         }
     }
 
@@ -242,6 +246,12 @@ impl Program {
                                     {
                                         rect.render_widget(help_paragraph, chunks[2]);
                                     }
+                                }
+                                Popup::Search => {
+                                    rect.render_widget(
+                                        Program::render_search(&self.search_term),
+                                        chunks[2],
+                                    );
                                 }
                                 _ => {
                                     let popup_content = Program::render_popup();
@@ -527,7 +537,10 @@ impl Program {
         match rx.recv()? {
             ProgramEvent::Input(event) => match event.code {
                 KeyCode::Char('q') => {
-                    if self.active_menu_item != MenuItem::Add {
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        self.search_term.push('q');
+                    } else if self.active_menu_item != MenuItem::Add {
                         self.active_menu_item = MenuItem::Main;
                         self.popup = Some(Popup::Exit);
                     } else {
@@ -535,14 +548,20 @@ impl Program {
                     }
                 }
                 KeyCode::Char('h') => {
-                    if self.active_menu_item != MenuItem::Add {
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        self.search_term.push('h');
+                    } else if self.active_menu_item != MenuItem::Add {
                         self.active_menu_item = MenuItem::Help;
                     } else {
                         Program::write_letter('h', edit_list_state, edit_record);
                     }
                 }
                 KeyCode::Char('a') => {
-                    if self.active_menu_item != MenuItem::Add {
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        self.search_term.push('a');
+                    } else if self.active_menu_item != MenuItem::Add {
                         self.active_menu_item = MenuItem::Add;
                         edit_list_state.select(Some(0));
                     } else {
@@ -550,28 +569,40 @@ impl Program {
                     }
                 }
                 KeyCode::Char('m') => {
-                    if self.active_menu_item != MenuItem::Add {
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        self.search_term.push('m');
+                    } else if self.active_menu_item != MenuItem::Add {
                         self.active_menu_item = MenuItem::Main;
                     } else {
                         Program::write_letter('m', edit_list_state, edit_record);
                     }
                 }
                 KeyCode::Char('s') => {
-                    if self.active_menu_item != MenuItem::Add {
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        self.search_term.push('s');
+                    } else if self.active_menu_item != MenuItem::Add {
                         self.show_password = !self.show_password;
                     } else {
                         Program::write_letter('s', edit_list_state, edit_record);
                     }
                 }
                 KeyCode::Char('d') => {
-                    if self.active_menu_item == MenuItem::Main {
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        self.search_term.push('d');
+                    } else if self.active_menu_item == MenuItem::Main {
                         self.popup = Some(Popup::DeleteARecord);
                     } else if self.active_menu_item == MenuItem::Add {
                         Program::write_letter('d', edit_list_state, edit_record);
                     }
                 }
                 KeyCode::Char('e') => {
-                    if self.active_menu_item == MenuItem::Main {
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        self.search_term.push('e');
+                    } else if self.active_menu_item == MenuItem::Main {
                         self.active_menu_item = MenuItem::Add;
                         edit_list_state.select(Some(0));
                         if let Some(selected) = records_list_state.selected() {
@@ -583,14 +614,30 @@ impl Program {
                     }
                 }
                 KeyCode::Char('n') => {
-                    if self.active_menu_item == MenuItem::Main {
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        self.search_term.push('n');
+                    } else if self.active_menu_item == MenuItem::Main {
                         self.popup = None;
                     } else if self.active_menu_item == MenuItem::Add {
                         Program::write_letter('n', edit_list_state, edit_record);
                     }
                 }
+                KeyCode::Char('f') => {
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        self.search_term.push('f');
+                    } else if self.active_menu_item == MenuItem::Main {
+                        self.popup = Some(Popup::Search);
+                    } else if self.active_menu_item == MenuItem::Add {
+                        Program::write_letter('f', edit_list_state, edit_record);
+                    }
+                }
                 KeyCode::Char('y') => {
-                    if self.active_menu_item == MenuItem::Main {
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        self.search_term.push('y');
+                    } else if self.active_menu_item == MenuItem::Main {
                         if let Some(popup) = &self.popup {
                             match popup {
                                 Popup::DeleteARecord => {
@@ -670,12 +717,18 @@ impl Program {
                     MenuItem::Help => self.active_menu_item = MenuItem::Main,
                 },
                 KeyCode::Char(c) => {
-                    if self.active_menu_item == MenuItem::Add {
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        self.search_term.push(c);
+                    } else if self.active_menu_item == MenuItem::Add {
                         Program::write_letter(c, edit_list_state, edit_record);
                     }
                 }
                 KeyCode::Backspace => {
-                    if self.active_menu_item == MenuItem::Add {
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        self.search_term.pop();
+                    } else if self.active_menu_item == MenuItem::Add {
                         if let Some(selected) = edit_list_state.selected() {
                             let data = &mut edit_record[selected];
                             data.pop();
@@ -685,10 +738,26 @@ impl Program {
                 KeyCode::Esc => {
                     if self.active_menu_item == MenuItem::Add {
                         self.active_menu_item = MenuItem::Main;
+                    } else if self.active_menu_item == MenuItem::Main {
+                        self.popup = None;
                     }
                 }
                 KeyCode::Enter => {
-                    if self.active_menu_item == MenuItem::Add && !edit_record.record_name.is_empty()
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        let index = self
+                            .records
+                            .iter()
+                            .position(|r| r.record_name == self.search_term);
+                        if let Some(index) = index {
+                            self.search_term.clear();
+                            self.popup = None;
+                            records_list_state.select(Some(index));
+                        } else {
+                            self.popup = None;
+                        }
+                    } else if self.active_menu_item == MenuItem::Add
+                        && !edit_record.record_name.is_empty()
                     {
                         // Remove the popup if there is one
                         self.popup = None;
@@ -710,7 +779,10 @@ impl Program {
                     }
                 }
                 KeyCode::Delete => {
-                    if self.active_menu_item == MenuItem::Main {
+                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
+                    {
+                        self.search_term.clear();
+                    } else if self.active_menu_item == MenuItem::Main {
                         self.popup = Some(Popup::DeleteAnAccount);
                     } else if self.active_menu_item == MenuItem::Add {
                         if let Some(selected) = edit_list_state.selected() {
@@ -759,6 +831,7 @@ impl Program {
             Spans::from(vec![Span::raw("Press `a` to add a new record.")]),
             Spans::from(vec![Span::raw("Press `d` to delete the currently selected record.")]),
             Spans::from(vec![Span::raw("Press `e` to edit the currently selected record.")]),
+            Spans::from(vec![Span::raw("Press 'f' to open search box. Type in the search term and press enter to search. To cancel search press ESC.")]),
             Spans::from(vec![Span::raw("When you view a record press F1 to copy the username, F2 to copy the email, F3 to copy the password.")]),
             Spans::from(vec![Span::raw("Press `enter` when you are in edit/add mode to save the record.")]),
             Spans::from(vec![Span::raw("Press `esc` to go back to main when you are in edit/add mode.")]),
@@ -786,6 +859,7 @@ impl Program {
                     Spans::from(vec![Span::raw("Press 'up' and 'down' arrows to navigate through fields. Press 'd' to delete the current record.")]),
                     Spans::from(vec![Span::raw("Press 's'` to toggle showing the password. Use 'left' and 'right' arrows to navigate through menus.")]),
                     Spans::from(vec![Span::raw("When you view a record press F1 to copy the username, F2 to copy the email, F3 to copy the password.")]),
+                    Spans::from(vec![Span::raw("Press 'f' to open search box. Type in the search term and press enter to search. To cancel search press ESC.")]),
                     Spans::from(vec![Span::raw("Press 'q' to quit. Press 'h' to see the help page for more information.")]),
                 ])
                 .alignment(Alignment::Left)
@@ -816,6 +890,15 @@ impl Program {
             }
             _ => None,
         }
+    }
+
+    fn render_search<'a>(search_text: &String) -> Paragraph<'a> {
+        let paragraph = Paragraph::new(Span::styled(
+            format!("Search: {}", search_text),
+            Style::default().fg(Color::White),
+        ))
+        .alignment(Alignment::Center);
+        paragraph
     }
 
     fn render_add<'a>(record: &Record) -> Option<(List<'a>, List<'a>)> {
@@ -1145,5 +1228,35 @@ impl Program {
             }
         }
         None
+    }
+
+    pub fn search(records: &Vec<Record>, needle: &str) -> Vec<usize> {
+        let mut haystack = String::new();
+        let mut indexes = Vec::new(); // all intervals are inclusive for both ends
+        let mut result = Vec::new();
+        for record in records {
+            indexes.push((
+                haystack.len(),
+                haystack.len() + record.record_name.len(),
+                false,
+            ));
+            haystack.push_str(&record.record_name);
+            haystack.push(' ');
+        }
+        let v: Vec<_> = string_search_indices(&haystack, needle).collect();
+
+        for (i, _) in v {
+            // the boolean flag is needed to avoid duplicates. for example if we have one record 'ab ab' and other 'ab' and we search for 'ab' we will get two indexes for the first record
+            let mut count = 1;
+            for (start, end, flag) in &mut indexes {
+                if !*flag && i >= *start && i <= *end {
+                    result.push(count);
+                    *flag = true;
+                    break;
+                }
+                count += 1;
+            }
+        }
+        result
     }
 }
