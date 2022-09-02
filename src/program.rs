@@ -56,6 +56,7 @@ pub struct Program {
     logged_user: Option<User>,
     show_password: bool,
     edit_mode: bool,
+    popup: Option<Popup>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -82,6 +83,12 @@ enum MenuItem {
     Help,
 }
 
+enum Popup {
+    DeleteARecord,
+    DeleteAnAccount,
+    Exit,
+}
+
 impl From<MenuItem> for usize {
     fn from(input: MenuItem) -> usize {
         match input {
@@ -102,6 +109,7 @@ impl Program {
             logged_user: None,
             show_password: false,
             edit_mode: false,
+            popup: None,
         }
     }
 
@@ -223,7 +231,10 @@ impl Program {
                                 &mut record_list_state,
                             );
                             rect.render_widget(right, records_chunk[1]);
-                        } else {
+                        }
+                        if self.popup.is_some() {
+                            let popup_content = Program::render_popup();
+                            rect.render_widget(popup_content, chunks[2]);
                         }
                     }
                     MenuItem::Help => rect.render_widget(Program::render_help(), chunks[1]),
@@ -466,7 +477,8 @@ impl Program {
             ProgramEvent::Input(event) => match event.code {
                 KeyCode::Char('q') => {
                     if self.active_menu_item != MenuItem::Add {
-                        self.should_quit = true;
+                        self.active_menu_item = MenuItem::Main;
+                        self.popup = Some(Popup::Exit);
                     } else if let Some(selected) = edit_list_state.selected() {
                         let data = &mut edit_record[selected];
                         data.push('q');
@@ -506,18 +518,13 @@ impl Program {
                     }
                 }
                 KeyCode::Char('d') => {
-                    if self.active_menu_item != MenuItem::Add
-                        && self.active_menu_item == MenuItem::Main
-                    {
-                        if let Some(selected) = records_list_state.selected() {
-                            self.records.remove(selected);
-                            records_list_state.select(Some(0));
-                        } else {
-                            return Err(Box::new(LogicError::NoSelectedRecord {}));
+                    if self.active_menu_item == MenuItem::Main {
+                        self.popup = Some(Popup::DeleteARecord);
+                    } else if self.active_menu_item == MenuItem::Add {
+                        if let Some(selected) = edit_list_state.selected() {
+                            let data = &mut edit_record[selected];
+                            data.push('d');
                         }
-                    } else if let Some(selected) = edit_list_state.selected() {
-                        let data = &mut edit_record[selected];
-                        data.push('d');
                     }
                 }
                 KeyCode::Char('e') => {
@@ -531,6 +538,46 @@ impl Program {
                     } else if let Some(selected) = edit_list_state.selected() {
                         let data = &mut edit_record[selected];
                         data.push('e');
+                    }
+                }
+                KeyCode::Char('n') => {
+                    if self.active_menu_item == MenuItem::Main {
+                        self.popup = None;
+                    } else if self.active_menu_item == MenuItem::Add {
+                        if let Some(selected) = edit_list_state.selected() {
+                            let data = &mut edit_record[selected];
+                            data.push('n');
+                        }
+                    }
+                }
+                KeyCode::Char('y') => {
+                    if self.active_menu_item == MenuItem::Main {
+                        if let Some(popup) = &self.popup {
+                            match popup {
+                                Popup::DeleteARecord => {
+                                    if let Some(selected) = records_list_state.selected() {
+                                        self.records.remove(selected);
+                                        records_list_state.select(Some(0));
+                                    } else {
+                                        return Err(Box::new(LogicError::NoSelectedRecord {}));
+                                    }
+                                }
+                                Popup::DeleteAnAccount => {
+                                    if let Some(user) = self.logged_user.as_ref() {
+                                        self.delete_user(user.username.clone().as_ref())?;
+                                    } else {
+                                        return Err(Box::new(LogicError::NoLoggedUser {}));
+                                    }
+                                }
+                                Popup::Exit => self.should_quit = true,
+                            }
+                        }
+                        self.popup = None;
+                    } else if self.active_menu_item == MenuItem::Add {
+                        if let Some(selected) = edit_list_state.selected() {
+                            let data = &mut edit_record[selected];
+                            data.push('y');
+                        }
                     }
                 }
                 KeyCode::Up => {
@@ -575,8 +622,20 @@ impl Program {
                         }
                     }
                 }
-                KeyCode::Left => {}
-                KeyCode::Right => {}
+                KeyCode::Left => {
+                    match self.active_menu_item  {
+                        MenuItem::Main => self.active_menu_item = MenuItem::Help,
+                        MenuItem::Add => self.active_menu_item = MenuItem::Main,
+                        MenuItem::Help => self.active_menu_item = MenuItem::Add,
+                    }
+                }
+                KeyCode::Right => {
+                    match self.active_menu_item  {
+                        MenuItem::Main => self.active_menu_item = MenuItem::Add,
+                        MenuItem::Add => self.active_menu_item = MenuItem::Help,
+                        MenuItem::Help => self.active_menu_item = MenuItem::Main,
+                    }
+                }
                 KeyCode::Char(c) => {
                     if self.active_menu_item == MenuItem::Add {
                         if let Some(selected) = edit_list_state.selected() {
@@ -599,12 +658,17 @@ impl Program {
                     }
                 }
                 KeyCode::Enter => {
-                    if self.active_menu_item == MenuItem::Add && !edit_record.record_name.is_empty() {
+                    if self.active_menu_item == MenuItem::Add && !edit_record.record_name.is_empty()
+                    {
                         self.active_menu_item = MenuItem::Main;
                         if self.edit_mode {
-                            if let Some(r) = self.records
+                            if let Some(r) = self
+                                .records
                                 .iter_mut()
-                                .find(|r| r.record_name == edit_record.record_name) { r.clone_from(edit_record); }
+                                .find(|r| r.record_name == edit_record.record_name)
+                            {
+                                r.clone_from(edit_record);
+                            }
                         } else {
                             self.records.push(edit_record.clone());
                         }
@@ -612,10 +676,13 @@ impl Program {
                     }
                 }
                 KeyCode::Delete => {
-                    if let Some(user) = self.logged_user.as_ref() {
-                        self.delete_user(user.username.clone().as_ref())?;
-                    } else {
-                        return Err(Box::new(LogicError::NoLoggedUser {}));
+                    if self.active_menu_item == MenuItem::Main {
+                        self.popup = Some(Popup::DeleteAnAccount);
+                    } else if self.active_menu_item == MenuItem::Add {
+                        if let Some(selected) = edit_list_state.selected() {
+                            let data = &mut edit_record[selected];
+                            data.clear();
+                        }
                     }
                 }
                 KeyCode::F(n) => {
@@ -631,15 +698,9 @@ impl Program {
                                 )
                                 .unwrap();
                             let data = match n {
-                                1 => {
-                                    selected_record.username.clone()
-                                }
-                                2 => {
-                                    selected_record.email.clone()
-                                }
-                                3 => {
-                                    selected_record.password.clone()
-                                }
+                                1 => selected_record.username.clone(),
+                                2 => selected_record.email.clone(),
+                                3 => selected_record.password.clone(),
                                 _ => unreachable!(),
                             };
                             // Copy the data to the clipboard
@@ -792,12 +853,8 @@ impl Program {
         };
 
         let records_detail = Table::new(vec![Row::new(vec![
-            Cell::from(Span::raw(
-                selected_record.username.unwrap_or_default(),
-            )),
-            Cell::from(Span::raw(
-                selected_record.email.unwrap_or_default(),
-            )),
+            Cell::from(Span::raw(selected_record.username.unwrap_or_default())),
+            Cell::from(Span::raw(selected_record.email.unwrap_or_default())),
             Cell::from(Span::raw(password)),
         ])])
         .header(Row::new(vec![
@@ -828,6 +885,15 @@ impl Program {
         ]);
 
         Some((list, records_detail))
+    }
+
+    fn render_popup<'a>() -> Paragraph<'a> {
+        let text = { "Press y to confirm, n to cancel." };
+        let paragraph = Paragraph::new(Span::styled(
+            text,
+            Style::default().add_modifier(Modifier::SLOW_BLINK),
+        ));
+        paragraph
     }
 
     fn load_and_decrypt_data(&mut self) -> Result<(), Box<dyn Error>> {
