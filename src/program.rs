@@ -411,7 +411,7 @@ impl Program {
     }
 
     pub fn delete_user(&mut self, username: &str) -> Result<(), Box<dyn Error>> {
-        if self.logged_user.is_none() && self.logged_user.as_ref().unwrap().username != username {
+        if self.logged_user.is_none() || self.logged_user.as_ref().unwrap().username != username {
             // if the user is not logged in and the username is not the same as the one to be deleted throw error
             return Err(LogicError::NoLoggedUser.into());
         }
@@ -821,6 +821,7 @@ impl Program {
                                 .find(|r| r.record_name == edit_record.record_name)
                             {
                                 r.clone_from(edit_record);
+                                self.active_menu_item = MenuItem::Main;
                             }
                         } else if let Err(e) = self.add_record(edit_record.clone()) {
                             return Err(e);
@@ -947,7 +948,7 @@ impl Program {
                 let paragraph = Paragraph::new(vec![
                     Spans::from(vec![Span::raw("Use 'up' and 'down' arrows to select a field. Use `left` and `right` arrows to navigate through the menus.")]),
                     Spans::from(vec![Span::raw("Press 'enter' to save the record. Use `left` and `right` arrows to navigate through the menus.")]),
-                    Spans::from(vec![Span::raw("Press F4 to generate a random password.")]),
+                    Spans::from(vec![Span::raw("Press F4 to generate a random password. If you edit a record, you can only edit the username, email or password, but not the record name!")]),
                     Spans::from(vec![Span::raw("Press `esc` to go back to main menu. See help for more information.")]),
                 ])
                 .alignment(Alignment::Left)
