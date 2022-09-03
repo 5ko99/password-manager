@@ -7,6 +7,7 @@ use std::{fs, thread};
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use naive_opt::string_search_indices;
+use passwords::PasswordGenerator;
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 use snafu::Snafu;
@@ -257,8 +258,21 @@ impl Program {
                                         chunks[2],
                                     );
                                 }
-                                _ => {
-                                    let popup_content = Program::render_popup();
+                                Popup::DeleteARecord => {
+                                    let popup_content = Program::render_popup(
+                                        "Do you want to delete this record? (y/n)",
+                                    );
+                                    rect.render_widget(popup_content, chunks[2]);
+                                }
+                                Popup::DeleteAnAccount => {
+                                    let popup_content = Program::render_popup(
+                                        "Do you want to delete this account? (y/n)",
+                                    );
+                                    rect.render_widget(popup_content, chunks[2]);
+                                }
+                                Popup::Exit => {
+                                    let popup_content =
+                                        Program::render_popup("Do you want to exit? (y/n)");
                                     rect.render_widget(popup_content, chunks[2]);
                                 }
                             }
@@ -721,7 +735,9 @@ impl Program {
                             } else {
                                 self.search_results_index = Some(selected - 1);
                             }
-                            records_list_state.select(Some(self.search_results[self.search_results_index.unwrap()]));
+                            records_list_state.select(Some(
+                                self.search_results[self.search_results_index.unwrap()],
+                            ));
                         }
                     } else {
                         match self.active_menu_item {
@@ -742,7 +758,9 @@ impl Program {
                             } else {
                                 self.search_results_index = Some(selected + 1);
                             }
-                            records_list_state.select(Some(self.search_results[self.search_results_index.unwrap()]));
+                            records_list_state.select(Some(
+                                self.search_results[self.search_results_index.unwrap()],
+                            ));
                         }
                     } else {
                         match self.active_menu_item {
@@ -846,6 +864,26 @@ impl Program {
                             // Copy the data to the clipboard
                             terminal_clipboard::set_string(data.unwrap_or_default()).unwrap();
                         }
+                        4 => {
+                            // Password generator
+                            if self.active_menu_item == MenuItem::Add {
+                                let pg = PasswordGenerator {
+                                    length: 12,
+                                    numbers: true,
+                                    lowercase_letters: true,
+                                    uppercase_letters: true,
+                                    symbols: false,
+                                    spaces: false,
+                                    exclude_similar_characters: false,
+                                    strict: true,
+                                };
+
+                                let password = pg.generate_one();
+                                if let Ok(password) = password {
+                                    edit_record.password = Some(password);
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -867,7 +905,7 @@ impl Program {
             Spans::from(vec![Span::raw("Press `e` to edit the currently selected record.")]),
             Spans::from(vec![Span::raw("Press 'f' to open search box. Type in the search term and press enter to search. To cancel search press ESC.")]),
             Spans::from(vec![Span::raw("When you are in search mode, use `left` and `right` arrows to navigate through all matches.")]),
-            Spans::from(vec![Span::raw("When you view a record press F1 to copy the username, F2 to copy the email, F3 to copy the password.")]),
+            Spans::from(vec![Span::raw("When you view a record press F1 to copy the username, F2 to copy the email, F3 to copy the password. Press F4 to generate a random password when you are in Add/Edit mode.")]),
             Spans::from(vec![Span::raw("Press `enter` when you are in edit/add mode to save the record.")]),
             Spans::from(vec![Span::raw("Press `esc` to go back to main when you are in edit/add mode.")]),
             Spans::from(vec![Span::raw("When you edit a record, you can only edit the username, email or password, but not the record name.")]),
@@ -909,6 +947,7 @@ impl Program {
                 let paragraph = Paragraph::new(vec![
                     Spans::from(vec![Span::raw("Use 'up' and 'down' arrows to select a field. Use `left` and `right` arrows to navigate through the menus.")]),
                     Spans::from(vec![Span::raw("Press 'enter' to save the record. Use `left` and `right` arrows to navigate through the menus.")]),
+                    Spans::from(vec![Span::raw("Press F4 to generate a random password.")]),
                     Spans::from(vec![Span::raw("Press `esc` to go back to main menu. See help for more information.")]),
                 ])
                 .alignment(Alignment::Left)
@@ -1076,10 +1115,9 @@ impl Program {
         Some((list, records_detail))
     }
 
-    fn render_popup<'a>() -> Paragraph<'a> {
-        let text = { "Press y to confirm, n to cancel." };
+    fn render_popup<'a>(prompt_text: &'a str) -> Paragraph<'a> {
         let paragraph = Paragraph::new(Span::styled(
-            text,
+            prompt_text,
             Style::default()
                 .add_modifier(Modifier::SLOW_BLINK)
                 .fg(Color::Red),
@@ -1280,7 +1318,7 @@ impl Program {
 
         for (i, _) in v {
             // the boolean flag is needed to avoid duplicates. for example if we have one record 'ab ab' and other 'ab' and we search for 'ab' we will get two indexes for the first record
-            for (count,(start, end, flag)) in indexes.iter_mut().enumerate() {
+            for (count, (start, end, flag)) in indexes.iter_mut().enumerate() {
                 if !*flag && i >= *start && i <= *end {
                     result.push(count);
                     *flag = true;

@@ -18,3 +18,4 @@ snafu = "0.7.1"
 cbc = {version = "0.1.2", features = ["std"] }
 terminal-clipboard = "0.3.1"
 naive_opt = "0.1.18"
+passwords = "3.1.9"
