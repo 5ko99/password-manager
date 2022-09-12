@@ -184,7 +184,7 @@ impl Program {
         let mut edit_list_state = ListState::default();
         edit_list_state.select(Some(0));
 
-        let mut edit_record = Record::new("".to_string(), None, None, None);
+        let mut edit_record = Record::new("", "", "", "");
 
         loop {
             self.terminal.draw(|rect| {
@@ -502,7 +502,7 @@ impl Program {
         if self.logged_user.is_some() {
             if self.records.contains(&record) {
                 Err(Box::new(LogicError::DuplicationError {
-                    name: record.record_name,
+                    name: record.name,
                 }))
             } else {
                 self.records.push(record);
@@ -518,7 +518,7 @@ impl Program {
 
     pub fn delete_record(&mut self, record_name: &str) -> Result<(), Box<dyn Error>> {
         if self.logged_user.is_some() {
-            self.records.retain(|r| r.record_name != record_name);
+            self.records.retain(|r| r.name != record_name);
             Ok(())
         } else {
             Err(Box::new(LogicError::NoLoggedUser))
@@ -809,7 +809,7 @@ impl Program {
                             self.popup = None;
                         }
                     } else if self.active_menu_item == MenuItem::Add
-                        && !edit_record.record_name.is_empty()
+                        && !edit_record.name.is_empty()
                     {
                         // Remove the popup if there is one
                         self.popup = None;
@@ -818,7 +818,7 @@ impl Program {
                             if let Some(r) = self
                                 .records
                                 .iter_mut()
-                                .find(|r| r.record_name == edit_record.record_name)
+                                .find(|r| r == &edit_record)
                             {
                                 r.clone_from(edit_record);
                                 self.active_menu_item = MenuItem::Main;
@@ -863,7 +863,7 @@ impl Program {
                                 _ => unreachable!(),
                             };
                             // Copy the data to the clipboard
-                            terminal_clipboard::set_string(data.unwrap_or_default()).unwrap();
+                            terminal_clipboard::set_string(data).unwrap();
                         }
                         4 => {
                             // Password generator
@@ -881,7 +881,7 @@ impl Program {
 
                                 let password = pg.generate_one();
                                 if let Ok(password) = password {
-                                    edit_record.password = Some(password);
+                                    edit_record.password = password;
                                 }
                             }
                         }
@@ -977,30 +977,30 @@ impl Program {
     fn render_add<'a>(record: &Record) -> Option<(List<'a>, List<'a>)> {
         let mut items: Vec<_> = Vec::new();
         // We need to render something for each field in the record, even if the field is empty for now.
-        if record.record_name.is_empty() {
+        if record.name.is_empty() {
             items.push(ListItem::new("_".to_string()));
         } else {
-            items.push(ListItem::new(record.record_name.clone()));
+            items.push(ListItem::new(record.name.clone()));
         }
-        if record.username.is_none() || record.username.as_ref().unwrap().is_empty() {
+        if record.username.is_empty() {
             items.push(ListItem::new("_".to_string()));
         } else {
             items.push(ListItem::new(
-                record.username.clone().unwrap_or_else(|| "_".to_string()),
+                record.username.clone(),
             ));
         }
-        if record.email.is_none() || record.email.as_ref().unwrap().is_empty() {
+        if record.email.is_empty() {
             items.push(ListItem::new("_".to_string()));
         } else {
             items.push(ListItem::new(
-                record.email.clone().unwrap_or_else(|| "_".to_string()),
+                record.email.clone(),
             ));
         }
-        if record.password.is_none() || record.password.as_ref().unwrap().is_empty() {
+        if record.password.is_empty() {
             items.push(ListItem::new("_".to_string()));
         } else {
             items.push(ListItem::new(
-                record.password.clone().unwrap_or_else(|| "_".to_string()),
+                record.password.clone(),
             ));
         }
 
@@ -1051,7 +1051,7 @@ impl Program {
             .iter()
             .map(|record| {
                 ListItem::new(Spans::from(vec![Span::styled(
-                    record.record_name.clone(),
+                    record.name.clone(),
                     Style::default(),
                 )]))
             })
@@ -1076,14 +1076,14 @@ impl Program {
         );
 
         let password = if *show_password {
-            selected_record.password.unwrap_or_default()
+            selected_record.password.clone()
         } else {
             "********".to_string()
         };
 
         let records_detail = Table::new(vec![Row::new(vec![
-            Cell::from(Span::raw(selected_record.username.unwrap_or_default())),
-            Cell::from(Span::raw(selected_record.email.unwrap_or_default())),
+            Cell::from(Span::raw(selected_record.username)),
+            Cell::from(Span::raw(selected_record.email)),
             Cell::from(Span::raw(password)),
         ])])
         .header(Row::new(vec![
@@ -1295,7 +1295,7 @@ impl Program {
 
     pub fn get_record_by_name(&self, name: &str) -> Option<&Record> {
         for record in &self.records {
-            if record.record_name == name {
+            if record.name == name {
                 return Some(record);
             }
         }
@@ -1309,10 +1309,10 @@ impl Program {
         for record in records {
             indexes.push((
                 haystack.len(),
-                haystack.len() + record.record_name.len(),
+                haystack.len() + record.name.len(),
                 false,
             ));
-            haystack.push_str(&record.record_name);
+            haystack.push_str(&record.name);
             haystack.push(' ');
         }
         let v: Vec<_> = string_search_indices(&haystack, needle).collect();
