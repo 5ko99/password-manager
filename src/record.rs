@@ -4,23 +4,23 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct Record {
-    pub record_name: String,
-    pub username: Option<String>,
-    pub email: Option<String>,
-    pub password: Option<String>,
+    pub name: String,
+    pub username: String,
+    pub email: String,
+    pub password: String,
 }
 
 impl PartialEq for Record {
     fn eq(&self, other: &Self) -> bool {
-        self.record_name == other.record_name
+        self.name == other.name
     }
 }
 
 impl Index<usize> for Record {
     type Output = String;
 
-    fn index<'a>(&'_ self, _index: usize) -> &'_ String {
-        if let Some(value) = self.get(_index) {
+    fn index(&self, index: usize) -> &String {
+        if let Some(value) = self.get(index) {
             value
         } else {
             panic!("Index out of bounds");
@@ -29,8 +29,8 @@ impl Index<usize> for Record {
 }
 
 impl IndexMut<usize> for Record {
-    fn index_mut<'a>(&'_ mut self, _index: usize) -> &'_ mut String {
-        if let Some(value) = self.get_mut(_index) {
+    fn index_mut(&mut self, index: usize) -> &mut String {
+        if let Some(value) = self.get_mut(index) {
             value
         } else {
             panic!("Index out of bounds");
@@ -39,92 +39,31 @@ impl IndexMut<usize> for Record {
 }
 
 impl Record {
-    pub fn new(
-        record_name: String,
-        username: Option<String>,
-        email: Option<String>,
-        password: Option<String>,
-    ) -> Record {
-        let mut rec = Record {
-            record_name,
-            ..Default::default()
-        };
-        if username.is_some() {
-            rec.username = username;
+    pub fn new(name: &str, username: &str, email: &str, password: &str) -> Record {
+        Record {
+            name : name.to_string(),
+            username : username.to_string(),
+            email : email.to_string(),
+            password : password.to_string(),
         }
-        if email.is_some() {
-            rec.email = email;
-        }
-        if password.is_some() {
-            rec.password = password;
-        }
-        rec
     }
 
-    pub fn get(&'_ self, _index: usize) -> Option<&'_ String> {
-        match _index {
-            0 => Some(&self.record_name),
-            1 => {
-                if self.username.is_some() {
-                    Some(self.username.as_ref().unwrap())
-                } else {
-                    None
-                }
-            }
-            2 => {
-                if self.email.is_some() {
-                    Some(self.email.as_ref().unwrap())
-                } else {
-                    None
-                }
-            }
-            3 => {
-                if self.password.is_some() {
-                    Some(self.password.as_ref().unwrap())
-                } else {
-                    None
-                }
-            }
+    pub fn get(&self, index: usize) -> Option<&String> {
+        match index {
+            0 => Some(&self.name),
+            1 => Some(&self.username),
+            2 => Some(&self.email),
+            3 => Some(&self.password),
             _ => None,
         }
     }
 
-    pub fn get_mut(&'_ mut self, _index: usize) -> Option<&'_ mut String> {
-        match _index {
-            0 => Some(&mut self.record_name),
-            1 => {
-                if self.username.is_none() {
-                    // If the username is None, we create a new String and assign it to the username
-                    self.username = Some(String::new());
-                    self.username.as_mut()
-                } else if let Some(username) = &mut self.username {
-                    Some(username)
-                } else {
-                    panic!("Unknown error!");
-                }
-            }
-            2 => {
-                if self.email.is_none() {
-                    // If the email is None, we create a new String and assign it to the email
-                    self.email = Some(String::new());
-                    self.email.as_mut()
-                } else if let Some(email) = &mut self.email {
-                    Some(email)
-                } else {
-                    panic!("Unknown error!");
-                }
-            }
-            3 => {
-                if self.password.is_none() {
-                    // If the password is None, we create a new String and assign it to the password
-                    self.password = Some(String::new());
-                    self.password.as_mut()
-                } else if let Some(password) = &mut self.password {
-                    Some(password)
-                } else {
-                    panic!("Unknown error!");
-                }
-            }
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut String> {
+        match index {
+            0 => Some(&mut self.name),
+            1 => Some(&mut self.username),
+            2 => Some(&mut self.email),
+            3 => Some(&mut self.password),
             _ => None,
         }
     }
@@ -134,9 +73,16 @@ impl Record {
     }
 
     pub fn clear(&mut self) {
-        self.record_name = String::new();
-        self.username = None;
-        self.email = None;
-        self.password = None;
+        self.name.clear();
+        self.username.clear();
+        self.email.clear();
+        self.password.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.name.is_empty()
+            && self.username.is_empty()
+            && self.email.is_empty()
+            && self.password.is_empty()
     }
 }
