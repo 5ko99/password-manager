@@ -19,18 +19,18 @@ fn test_add_record() {
         .login(USERNAME.to_string(), PASSWORD.to_string(), digest(PASSWORD))
         .unwrap();
 
-    let record1 = Record::new("rec1".to_string(), Some("Petko".to_string()), None, None);
+    let record1 = Record::new("rec1", "Petko", "", "");
     let record2 = Record::new(
-        "rec2".to_string(),
-        Some("Petko".to_string()),
-        Some("petko@abv.bg".to_string()),
-        Some("1234".to_string()),
+        "rec2",
+        "Petko",
+        "petko@abv.bg",
+        "1234",
     );
     let record3 = Record::new(
-        "rec3".to_string(),
-        Some("vanyo".to_string()),
-        Some("vanyo@abv.bg".to_string()),
-        Some("123456".to_string()),
+        "rec3",
+        "vanyo",
+        "vanyo@abv.bg",
+        "123456",
     );
     assert!(program.add_record(record1.clone()).is_ok());
     assert_eq!(program.get_len_of_records(), 1);
@@ -46,7 +46,7 @@ fn test_add_record() {
 
     assert_eq!(
         program.get_record_by_name("rec1").unwrap().username,
-        Some("Petko".to_string())
+        "Petko"
     );
 }
 
@@ -85,7 +85,7 @@ fn test_logout() {
         .is_ok());
     assert!(program.logout().is_ok());
 
-    let record1 = Record::new("rec1".to_string(), Some("Petko".to_string()), None, None);
+    let record1 = Record::new("rec1", "Petko", "", "");
 
     assert!(program.add_record(record1).is_err());
 }
@@ -96,12 +96,12 @@ fn test_delete_record() {
     assert!(program
         .login(USERNAME.to_string(), PASSWORD.to_string(), digest(PASSWORD))
         .is_ok());
-    let record1 = Record::new("rec1".to_string(), Some("Petko".to_string()), None, None);
+    let record1 = Record::new("rec1", "Petko", "", "");
     let record2 = Record::new(
-        "rec2".to_string(),
-        Some("Petko".to_string()),
-        Some("petko.abv.bg".to_string()),
-        Some("1234".to_string()),
+        "rec2",
+        "Petko",
+        "petko@abv.bg",
+        "1234",
     );
     assert!(program.add_record(record1).is_ok());
     assert!(program.add_record(record2).is_ok());
@@ -182,10 +182,10 @@ fn test_encryption_and_decryption_with_empty_string() {
 #[test]
 fn test_simple_search_function() {
     let records = vec![
-        Record::new("abc".to_string(), None, None, None),
-        Record::new("efg".to_string(), None, None, None),
-        Record::new("pet".to_string(), None, None, None),
-        Record::new("wee".to_string(), None, None, None),
+        Record::new("abc", "", "", ""),
+        Record::new("efg", "", "", ""),
+        Record::new("pet", "", "", ""),
+        Record::new("wee", "", "", ""),
     ];
     let needle = "pet";
     let result = Program::search(&records, needle);
@@ -197,11 +197,11 @@ fn test_simple_search_function() {
 #[test]
 fn test_search_with_two_matches() {
     let records = vec![
-        Record::new("abc".to_string(), None, None, None),
-        Record::new("efg".to_string(), None, None, None),
-        Record::new("pet".to_string(), None, None, None),
-        Record::new("wee".to_string(), None, None, None),
-        Record::new("petko".to_string(), None, None, None),
+        Record::new("abc", "", "", ""),
+        Record::new("efg", "", "", ""),
+        Record::new("pet", "", "", ""),
+        Record::new("wee", "", "", ""),
+        Record::new("petko", "", "", ""),
     ];
     let needle = "pet";
     let result = Program::search(&records, needle);
@@ -214,14 +214,14 @@ fn test_search_with_two_matches() {
 #[test]
 fn test_search_with_four_matches() {
     let records = vec![
-        Record::new("petko".to_string(), None, None, None), // 1
-        Record::new("gosho".to_string(), None, None, None),
-        Record::new("chefo".to_string(), None, None, None),
-        Record::new("pet".to_string(), None, None, None), // 4
-        Record::new("Vili".to_string(), None, None, None),
-        Record::new("petko".to_string(), None, None, None), // 6
-        Record::new("ivan".to_string(), None, None, None),
-        Record::new("petko".to_string(), None, None, None), // 8
+        Record::new("petko", "", "", ""), // 1
+        Record::new("gosho", "", "", "",),
+        Record::new("chefo", "", "", ""),
+        Record::new("pet", "", "", ""), // 4
+        Record::new("Vili", "", "", ""),
+        Record::new("petko", "", "", ""), // 6
+        Record::new("ivan", "", "", ""),
+        Record::new("petko", "", "", ""), // 8
     ];
     let needle = "pet";
     let result = Program::search(&records, needle);
@@ -236,10 +236,10 @@ fn test_search_with_four_matches() {
 #[test]
 fn test_search_with_multiple_matches_2() {
     let records = vec![
-        Record::new("BBC".to_string(), None, None, None), // 1
-        Record::new("BBC2".to_string(), None, None, None),
-        Record::new("BNT".to_string(), None, None, None),
-        Record::new("BBC3".to_string(), None, None, None), // 4
+        Record::new("BBC", "", "", ""), // 1
+        Record::new("BBC2", "", "", ""),
+        Record::new("BNT", "", "", ""),
+        Record::new("BBC3", "", "", ""), // 4
     ];
     let needle = "BBC";
     let result = Program::search(&records, needle);
@@ -253,12 +253,12 @@ fn test_search_with_multiple_matches_2() {
 #[test]
 fn test_search_with_four_matches_and_two_matches_in_word() {
     let records = vec![
-        Record::new("gosho".to_string(), None, None, None), // 1 no match
-        Record::new("chefo".to_string(), None, None, None), // 2 no match
-        Record::new("petko petkov petkov".to_string(), None, None, None), // match 3
-        Record::new("vili petkov".to_string(), None, None, None), // match 4
-        Record::new("ivan".to_string(), None, None, None), // 5 no match
-        Record::new("petko".to_string(), None, None, None), // 6 match
+        Record::new("gosho", "", "", ""), // 1 no match
+        Record::new("chefo", "", "", ""), // 2 no match
+        Record::new("petko petkov petkov", "", "", ""), // match 3
+        Record::new("vili petkov", "", "", ""), // match 4
+        Record::new("ivan", "", "", ""), // 5 no match
+        Record::new("petko", "", "", ""), // 6 match
     ];
     let needle = "petko";
     let result = Program::search(&records, needle);

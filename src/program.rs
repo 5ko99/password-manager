@@ -1116,7 +1116,7 @@ impl Program {
         Some((list, records_detail))
     }
 
-    fn render_popup<'a>(prompt_text: &'a str) -> Paragraph<'a> {
+    fn render_popup(prompt_text: &str) -> Paragraph {
         let paragraph = Paragraph::new(Span::styled(
             prompt_text,
             Style::default()
