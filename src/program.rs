@@ -20,17 +20,8 @@ use tui::widgets::{
 };
 use tui::Terminal;
 
+use crate::encryption::{encrypt_data, decrypt_data};
 use crate::record::Record;
-
-use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
-
-use pbkdf2::{
-    password_hash::{PasswordHasher, SaltString},
-    Pbkdf2,
-};
-
-type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
-type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
 const PATH_TO_CONFIG: &str = "./data/.conf";
 
@@ -39,7 +30,7 @@ const MINIMUM_PASSWORD_LENGTH: usize = 4;
 const MENU_TITLES: &[&str] = &["Main", "Add/Edit", "Help"];
 
 #[derive(Debug, Snafu)]
-enum LogicError {
+pub enum LogicError {
     #[snafu(display("No logged user found!"))]
     NoLoggedUser,
     #[snafu(display("The element '{name}' is already in the list! Please choose another name."))]
@@ -48,6 +39,8 @@ enum LogicError {
     AlreadyLoggedUser { name: String },
     #[snafu(display("Always should be a selected record"))]
     NoSelectedRecord {},
+    #[snafu(display("Error while encrypting data! Error: '{info}'"))]
+    EncryptionError { info: String },
 }
 
 pub struct Program {
@@ -529,8 +522,9 @@ impl Program {
         if let Some(logged_user) = &self.logged_user {
             let path_to_data = format!("./data/{}.json", logged_user.username);
             let data = serde_json::to_string(&self.records)?;
-            let encrypted_data = self.encrypt_data(&data);
-            fs::write(path_to_data, encrypted_data).expect("Error while writing records to file!");
+            let encrypted_data = encrypt_data(logged_user,&data);
+            //fix the unwrap
+            fs::write(path_to_data, encrypted_data.unwrap()).expect("Error while writing records to file!");
         } else {
             return Err(Box::new(LogicError::NoLoggedUser));
         }
@@ -1151,7 +1145,7 @@ impl Program {
                 },
             };
 
-            let data = self.decrypt_data(&encrypted_data);
+            let data = decrypt_data(logged_user,&encrypted_data);
 
             let data: Result<Vec<Record>, serde_json::Error> = serde_json::from_str(&data);
 
@@ -1169,124 +1163,6 @@ impl Program {
         }
 
         Ok(())
-    }
-
-    pub fn decrypt_data(&self, block: &Vec<u8>) -> String {
-        let user = match &self.logged_user {
-            Some(u) => u,
-            None => panic!("No logged user!"),
-        };
-
-        // if the block is empty, return an empty string
-        if block.is_empty() {
-            return String::new();
-        }
-
-        let password = user.password.as_bytes();
-
-        let mut username_for_salt = user.username.clone();
-        username_for_salt.shrink_to(16);
-        for _ in 0..16 - user.username.len() {
-            username_for_salt.push('p');
-        }
-
-        assert_eq!(username_for_salt.len(), 16);
-
-        let salt = match SaltString::new(&username_for_salt) {
-            Ok(salt) => salt,
-            Err(e) => {
-                panic!("Error while creating salt string:{}", e);
-            }
-        };
-
-        let password_hash = match Pbkdf2.hash_password(password, &salt) {
-            Ok(hash) => hash,
-            Err(e) => panic!("Error while hashing the master key:{}", e),
-        };
-
-        let password_hash = match password_hash.hash {
-            Some(hash) => hash.to_string(),
-            None => panic!("Error while hashing the master key"),
-        };
-
-        let mut key: [u8; 16] = [0; 16];
-
-        key[..16].copy_from_slice(&password_hash.as_bytes()[..16]);
-
-        let iv = username_for_salt.as_bytes();
-
-        let cipher = Aes128CbcDec::new_from_slices(&key, iv);
-
-        let cipher = match cipher {
-            Ok(cipher) => cipher,
-            Err(e) => panic!("Error while creating the cipher: {}", e),
-        };
-
-        let decrypt_block = cipher.decrypt_padded_vec_mut::<Pkcs7>(block.as_slice());
-
-        let decrypt_block = match decrypt_block {
-            Ok(block) => block,
-            Err(e) => panic!("Error while decrypting the block: {}", e),
-        };
-
-        let mut decrypt_block_string: String = String::new();
-
-        for item in &decrypt_block {
-            decrypt_block_string.push(*item as char);
-        }
-
-        decrypt_block_string
-    }
-
-    pub fn encrypt_data(&self, block: &str) -> Vec<u8> {
-        let user = match &self.logged_user {
-            Some(u) => u,
-            None => panic!("No logged user!"),
-        };
-
-        let password = user.password.as_bytes();
-
-        let mut username_for_salt = user.username.clone();
-        username_for_salt.shrink_to(16);
-        for _ in 0..16 - user.username.len() {
-            username_for_salt.push('p');
-        }
-
-        assert_eq!(username_for_salt.len(), 16);
-
-        let salt = match SaltString::new(&username_for_salt) {
-            Ok(salt) => salt,
-            Err(e) => {
-                panic!("Error while creating salt string:{}", e);
-            }
-        };
-
-        let password_hash = match Pbkdf2.hash_password(password, &salt) {
-            Ok(hash) => hash,
-            Err(e) => panic!("Error while hashing the master key:{}", e),
-        };
-
-        let password_hash = match password_hash.hash {
-            Some(hash) => hash.to_string(),
-            None => panic!("Error while hashing the master key"),
-        };
-
-        let mut key: [u8; 16] = [0; 16];
-
-        key[..16].copy_from_slice(&password_hash.as_bytes()[..16]);
-
-        let iv = username_for_salt.as_bytes();
-
-        let cipher = Aes128CbcEnc::new_from_slices(&key, iv);
-
-        let cipher = match cipher {
-            Ok(cipher) => cipher,
-            Err(e) => panic!("Error while creating the cipher: {}", e),
-        };
-
-        let encrypt_block = cipher.encrypt_padded_vec_mut::<Pkcs7>(block.as_bytes());
-
-        encrypt_block
     }
 
     pub fn get_len_of_records(&self) -> usize {
@@ -1328,5 +1204,12 @@ impl Program {
             }
         }
         result
+    }
+
+    pub fn get_logged_user(&self) -> Option<&User> {
+        match &self.logged_user {
+            Some(user) => Some(user),
+            None => None,
+        }
     }
 }
