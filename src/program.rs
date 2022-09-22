@@ -39,8 +39,8 @@ pub enum LogicError {
     AlreadyLoggedUser { name: String },
     #[snafu(display("Always should be a selected record"))]
     NoSelectedRecord {},
-    #[snafu(display("Error while encrypting data! Error: '{info}'"))]
-    EncryptionError { info: String },
+    #[snafu(display("Unexpected error: {err}"))]
+    UnexpectedError { err: String },
 }
 
 pub struct Program {
@@ -66,6 +66,10 @@ pub struct User {
 impl User {
     pub fn new(username: String, password: String) -> User {
         User { username, password }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.username.is_empty() || self.password.is_empty()
     }
 }
 
@@ -1147,7 +1151,8 @@ impl Program {
 
             let data = decrypt_data(logged_user,&encrypted_data);
 
-            let data: Result<Vec<Record>, serde_json::Error> = serde_json::from_str(&data);
+            let data: Result<Vec<Record>, serde_json::Error> = serde_json::from_str(&data.unwrap());
+            // TODO: Fix this function!
 
             // if there is an error, just return an empty vector
             let data = match data {

@@ -1,5 +1,5 @@
-use password_manager::{encryption::{encrypt_data, decrypt_data}, program::Program};
-use sha256::digest;
+use password_manager::{program::{User}, encryption::{encrypt_data, decrypt_data, EncryptionError}};
+
 
 const USERNAME : &str = "testuser";
 const PASSWORD : &str = "1234";
@@ -10,38 +10,67 @@ const PASSWORD2: &str = "4321";
 
 #[test]
 fn test_encryption_and_decryption() {
-    let mut program = Program::default();
-    assert!(program
-        .login(USERNAME.to_string(), PASSWORD.to_string(), digest(PASSWORD))
-        .is_ok());
-    let result = encrypt_data(program.get_logged_user().unwrap(),"pass");
-    assert_eq!(decrypt_data(program.get_logged_user().unwrap(),&result), "pass");
+    let user = User::new(USERNAME.to_string(), PASSWORD.to_string());
+    let result = encrypt_data(&user,"pass");
+    assert!(result.is_ok());
+    let result = result.unwrap();
+    let decripted = decrypt_data(&user,&result);
+    assert!(decripted.is_ok());
+    let decripted = decripted.unwrap();
+    assert_eq!(decripted, "pass");
 }
 
 #[test]
-#[should_panic]
 fn test_encryption_and_decryption_but_with_wrong_user() {
-    let mut program = Program::default();
-    assert!(program
-        .login(USERNAME.to_string(), PASSWORD.to_string(), digest(PASSWORD))
-        .is_ok());
+    let user = User::new(USERNAME.to_string(), PASSWORD.to_string());
     
-    let result = encrypt_data(program.get_logged_user().unwrap(),"pass");
+    let result = encrypt_data(&user,"pass");
+    assert!(result.is_ok());
 
-    assert!(program.logout().is_ok());
-    assert!(program
-        .login(USERNAME2.to_string(), PASSWORD2.to_string(), digest(PASSWORD2))
-        .is_ok());
+    let result = result.unwrap();
+
+    let user = User::new(USERNAME2.to_string(), PASSWORD2.to_string());
+
+    let decrypted = decrypt_data(&user,&result);
+
+    assert!(decrypted.is_err());
+
+    let error = decrypted.unwrap_err();
+    let error = error.downcast_ref::<EncryptionError>().unwrap();
     
-    assert_ne!(decrypt_data(program.get_logged_user().unwrap(),&result), "pass");
+    assert_eq!(std::mem::discriminant(error), std::mem::discriminant(&EncryptionError::DecryptionError{ info: "something".to_string() }));
 }
 
 #[test]
-fn test_encryption_and_decryption_with_empty_string() {
-    let mut program = Program::default();
-    assert!(program
-        .login(USERNAME.to_string(), PASSWORD.to_string(), digest(PASSWORD))
-        .is_ok());
-    let result = encrypt_data(program.get_logged_user().unwrap(),&"");
-    assert_eq!(decrypt_data(program.get_logged_user().unwrap(),&result), "");
+fn test_encryption_with_empty_string() {
+    let user = User::new(USERNAME.to_string(), PASSWORD.to_string());
+
+    let result = encrypt_data(&user,&"");
+    assert!(result.is_err());
+    let result_error = result.unwrap_err();
+    let result_error = result_error.downcast_ref::<EncryptionError>().unwrap();
+    assert_eq!(result_error, &EncryptionError::EmptyBlockError{});
 }
+
+#[test]
+fn test_encryption_with_empty_user() {
+    let user = User::new("".to_string(), "".to_string());
+    let result = encrypt_data(&user,&"pass");
+    assert!(result.is_err());
+    let result_error = result.unwrap_err();
+    let result_error = result_error.downcast_ref::<EncryptionError>().unwrap();
+    assert_eq!(result_error, &EncryptionError::EmptyUserError{});
+}
+
+#[test]
+fn test_decryption_with_empty_user() {
+    let user = User::new("".to_string(), "".to_string());
+    let test_vec : Vec<u8> = vec![0,1,2,3,4,5,6,7,8,9];
+    let result = decrypt_data(&user,&test_vec);
+    assert!(result.is_err());
+    let result_error = result.unwrap_err();
+    let result_error = result_error.downcast_ref::<EncryptionError>().unwrap();
+    assert_eq!(result_error, &EncryptionError::EmptyUserError{});
+}
+
+//TODO: Write more tests!

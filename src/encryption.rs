@@ -3,14 +3,39 @@ use pbkdf2::{
     password_hash::{PasswordHasher, SaltString},
     Pbkdf2,
 };
+use snafu::Snafu;
 use std::error::Error;
 
-use crate::program::{User, LogicError};
+use crate::program::{User};
 
 type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
+#[derive(Debug, Snafu,PartialEq,Eq)]
+pub enum EncryptionError {
+    #[snafu(display("Error while creating the cipher! Error: '{info}'"))]
+    CipherError { info: String },
+    #[snafu(display("Error while decripting the data! Error: '{info}'"))]
+    DecryptionError { info: String },
+    #[snafu(display("Error while hashing! Error: '{info}'"))]
+    HashError { info: String },
+    #[snafu(display("Error while creating the salt! Error: '{info}'"))]
+    SaltError { info: String },
+    #[snafu(display("Empty block!"))]
+    EmptyBlockError {},
+    #[snafu(display("Empty user!'"))]
+    EmptyUserError {},
+}
+
 pub fn encrypt_data(user: &User, block: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+    if block.is_empty() {
+        return Err(EncryptionError::EmptyBlockError {}.into());
+    }
+
+    if user.is_empty() {
+        return Err(EncryptionError::EmptyUserError {}.into());
+    }
+
     let password = user.password.as_bytes();
 
     let mut username_for_salt = user.username.clone();
@@ -24,20 +49,29 @@ pub fn encrypt_data(user: &User, block: &str) -> Result<Vec<u8>, Box<dyn Error>>
     let salt = match SaltString::new(&username_for_salt) {
         Ok(salt) => salt,
         Err(e) => {
-            return Err(LogicError::EncryptionError {
+            return Err(EncryptionError::SaltError {
                 info: e.to_string(),
-            }.into());
+            }
+            .into());
         }
     };
 
     let password_hash = match Pbkdf2.hash_password(password, &salt) {
-        Ok(hash) => hash,
-        Err(e) => panic!("Error while hashing the master key:{}", e),
-    };
-
-    let password_hash = match password_hash.hash {
-        Some(hash) => hash.to_string(),
-        None => panic!("Error while hashing the master key"),
+        Ok(hash) => match hash.hash {
+            Some(hash) => hash,
+            None => {
+                return Err(EncryptionError::HashError {
+                    info: "Hash is None!".to_string(),
+                }
+                .into());
+            }
+        },
+        Err(e) => {
+            return Err(EncryptionError::HashError {
+                info: e.to_string(),
+            }
+            .into());
+        }
     };
 
     let mut key: [u8; 16] = [0; 16];
@@ -50,7 +84,12 @@ pub fn encrypt_data(user: &User, block: &str) -> Result<Vec<u8>, Box<dyn Error>>
 
     let cipher = match cipher {
         Ok(cipher) => cipher,
-        Err(e) => panic!("Error while creating the cipher: {}", e),
+        Err(e) => {
+            return Err(EncryptionError::CipherError {
+                info: e.to_string(),
+            }
+            .into());
+        }
     };
 
     let encrypt_block = cipher.encrypt_padded_vec_mut::<Pkcs7>(block.as_bytes());
@@ -58,17 +97,20 @@ pub fn encrypt_data(user: &User, block: &str) -> Result<Vec<u8>, Box<dyn Error>>
     Ok(encrypt_block)
 }
 
-pub fn decrypt_data(user: &User, block: &Vec<u8>) -> String {
-    // if the block is empty, return an empty string
+pub fn decrypt_data(user: &User, block: &Vec<u8>) -> Result<String, Box<dyn Error>> {
     if block.is_empty() {
-        return String::new();
+        return Err(EncryptionError::EmptyBlockError {}.into());
+    }
+
+    if user.is_empty() {
+        return Err(EncryptionError::EmptyUserError {}.into());
     }
 
     let password = user.password.as_bytes();
 
     let mut username_for_salt = user.username.clone();
     username_for_salt.shrink_to(16);
-    for _ in 0..16 - user.username.len() {
+    for _ in user.username.len()..16 {
         username_for_salt.push('p');
     }
 
@@ -77,18 +119,29 @@ pub fn decrypt_data(user: &User, block: &Vec<u8>) -> String {
     let salt = match SaltString::new(&username_for_salt) {
         Ok(salt) => salt,
         Err(e) => {
-            panic!("Error while creating salt string:{}", e);
+            return Err(EncryptionError::SaltError {
+                info: e.to_string(),
+            }
+            .into());
         }
     };
 
     let password_hash = match Pbkdf2.hash_password(password, &salt) {
-        Ok(hash) => hash,
-        Err(e) => panic!("Error while hashing the master key:{}", e),
-    };
-
-    let password_hash = match password_hash.hash {
-        Some(hash) => hash.to_string(),
-        None => panic!("Error while hashing the master key"),
+        Ok(hash) => match hash.hash {
+            Some(hash) => hash,
+            None => {
+                return Err(EncryptionError::HashError {
+                    info: "Hash is None!".to_string(),
+                }
+                .into());
+            }
+        },
+        Err(e) => {
+            return Err(EncryptionError::HashError {
+                info: e.to_string(),
+            }
+            .into());
+        }
     };
 
     let mut key: [u8; 16] = [0; 16];
@@ -101,14 +154,24 @@ pub fn decrypt_data(user: &User, block: &Vec<u8>) -> String {
 
     let cipher = match cipher {
         Ok(cipher) => cipher,
-        Err(e) => panic!("Error while creating the cipher: {}", e),
+        Err(e) => {
+            return Err(EncryptionError::CipherError {
+                info: e.to_string(),
+            }
+            .into());
+        }
     };
 
     let decrypt_block = cipher.decrypt_padded_vec_mut::<Pkcs7>(block.as_slice());
 
     let decrypt_block = match decrypt_block {
         Ok(block) => block,
-        Err(e) => panic!("Error while decrypting the block: {}", e),
+        Err(e) => {
+            return Err(EncryptionError::DecryptionError {
+                info: e.to_string(),
+            }
+            .into());
+        }
     };
 
     let mut decrypt_block_string: String = String::new();
@@ -117,5 +180,5 @@ pub fn decrypt_data(user: &User, block: &Vec<u8>) -> String {
         decrypt_block_string.push(*item as char);
     }
 
-    decrypt_block_string
+    Ok(decrypt_block_string)
 }
