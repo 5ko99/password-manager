@@ -1175,12 +1175,7 @@ impl Program {
     }
 
     pub fn get_record_by_name(&self, name: &str) -> Option<&Record> {
-        for record in &self.records {
-            if record.name == name {
-                return Some(record);
-            }
-        }
-        None
+        self.records.iter().find(|&record| record.name == name)
     }
 
     pub fn search(records: &Vec<Record>, needle: &str) -> Vec<usize> {

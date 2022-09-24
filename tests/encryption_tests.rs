@@ -73,4 +73,38 @@ fn test_decryption_with_empty_user() {
     assert_eq!(result_error, &EncryptionError::EmptyUserError{});
 }
 
+
+#[test]
+fn test_decryption_with_empty_vec() {
+    let user = User::new(USERNAME.to_string(), PASSWORD.to_string());
+    let test_vec : Vec<u8> = vec![];
+    let result = decrypt_data(&user,&test_vec);
+    assert!(result.is_err());
+    let result_error = result.unwrap_err();
+    let result_error = result_error.downcast_ref::<EncryptionError>().unwrap();
+    assert_eq!(result_error, &EncryptionError::EmptyBlockError{});
+}
+
+#[test]
+fn test_encryption_with_invalid_user() {
+    let user = User::new("t3st@".to_string(), "1234".to_string()); //user cannot have invalid chars.
+    let result = encrypt_data(&user,&"pass");
+    assert!(result.is_err());
+    let result_error = result.unwrap_err();
+    let result_error = result_error.downcast_ref::<EncryptionError>().unwrap();
+    assert_eq!(std::mem::discriminant(result_error), std::mem::discriminant(&EncryptionError::SaltError{ info: "something".to_string() }));
+}
+
+#[test]
+fn test_decryption_with_invalid_user() {
+    let user = User::new("t3st@".to_string(), "1234".to_string()); //user cannot have invalid chars.
+    let test_vec : Vec<u8> = vec![0,1,2,3,4,5,6,7,8,9];
+    let result = decrypt_data(&user,&test_vec);
+    assert!(result.is_err());
+    let result_error = result.unwrap_err();
+    let result_error = result_error.downcast_ref::<EncryptionError>().unwrap();
+    assert_eq!(std::mem::discriminant(result_error), std::mem::discriminant(&EncryptionError::SaltError{ info: "something".to_string() }));
+}
+
+
 //TODO: Write more tests!
