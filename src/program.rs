@@ -20,7 +20,7 @@ use tui::widgets::{
 };
 use tui::Terminal;
 
-use crate::encryption::{encrypt_data, decrypt_data};
+use crate::encryption::{decrypt_data, encrypt_data, EncryptionError};
 use crate::record::Record;
 
 const PATH_TO_CONFIG: &str = "./data/.conf";
@@ -498,9 +498,7 @@ impl Program {
     pub fn add_record(&mut self, record: Record) -> Result<&Record, Box<dyn Error>> {
         if self.logged_user.is_some() {
             if self.records.contains(&record) {
-                Err(Box::new(LogicError::DuplicationError {
-                    name: record.name,
-                }))
+                Err(Box::new(LogicError::DuplicationError { name: record.name }))
             } else {
                 self.records.push(record);
                 return Ok(self
@@ -526,9 +524,10 @@ impl Program {
         if let Some(logged_user) = &self.logged_user {
             let path_to_data = format!("./data/{}.json", logged_user.username);
             let data = serde_json::to_string(&self.records)?;
-            let encrypted_data = encrypt_data(logged_user,&data);
+            let encrypted_data = encrypt_data(logged_user, &data);
             //fix the unwrap
-            fs::write(path_to_data, encrypted_data.unwrap()).expect("Error while writing records to file!");
+            fs::write(path_to_data, encrypted_data.unwrap())
+                .expect("Error while writing records to file!");
         } else {
             return Err(Box::new(LogicError::NoLoggedUser));
         }
@@ -806,18 +805,13 @@ impl Program {
                         } else {
                             self.popup = None;
                         }
-                    } else if self.active_menu_item == MenuItem::Add
-                        && !edit_record.name.is_empty()
+                    } else if self.active_menu_item == MenuItem::Add && !edit_record.name.is_empty()
                     {
                         // Remove the popup if there is one
                         self.popup = None;
 
                         if self.edit_mode {
-                            if let Some(r) = self
-                                .records
-                                .iter_mut()
-                                .find(|r| r == &edit_record)
-                            {
+                            if let Some(r) = self.records.iter_mut().find(|r| r == &edit_record) {
                                 r.clone_from(edit_record);
                                 self.active_menu_item = MenuItem::Main;
                             }
@@ -983,23 +977,17 @@ impl Program {
         if record.username.is_empty() {
             items.push(ListItem::new("_".to_string()));
         } else {
-            items.push(ListItem::new(
-                record.username.clone(),
-            ));
+            items.push(ListItem::new(record.username.clone()));
         }
         if record.email.is_empty() {
             items.push(ListItem::new("_".to_string()));
         } else {
-            items.push(ListItem::new(
-                record.email.clone(),
-            ));
+            items.push(ListItem::new(record.email.clone()));
         }
         if record.password.is_empty() {
             items.push(ListItem::new("_".to_string()));
         } else {
-            items.push(ListItem::new(
-                record.password.clone(),
-            ));
+            items.push(ListItem::new(record.password.clone()));
         }
 
         let labels: Vec<_> = vec![
@@ -1149,9 +1137,15 @@ impl Program {
                 },
             };
 
-            let data = decrypt_data(logged_user,&encrypted_data);
+            let data = match decrypt_data(logged_user, &encrypted_data) {
+                Ok(data) => data,
+                Err(error) => match error.downcast_ref::<EncryptionError>().unwrap() {
+                    EncryptionError::EmptyBlockError {} => String::new(),
+                    _ => return Err(error)
+                },
+            };
 
-            let data: Result<Vec<Record>, serde_json::Error> = serde_json::from_str(&data.unwrap());
+            let data: Result<Vec<Record>, serde_json::Error> = serde_json::from_str(&data);
             // TODO: Fix this function!
 
             // if there is an error, just return an empty vector
@@ -1183,11 +1177,7 @@ impl Program {
         let mut indexes = Vec::new(); // all intervals are inclusive for both ends
         let mut result = Vec::new();
         for record in records {
-            indexes.push((
-                haystack.len(),
-                haystack.len() + record.name.len(),
-                false,
-            ));
+            indexes.push((haystack.len(), haystack.len() + record.name.len(), false));
             haystack.push_str(&record.name);
             haystack.push(' ');
         }

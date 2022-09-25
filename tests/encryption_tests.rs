@@ -106,5 +106,25 @@ fn test_decryption_with_invalid_user() {
     assert_eq!(std::mem::discriminant(result_error), std::mem::discriminant(&EncryptionError::SaltError{ info: "something".to_string() }));
 }
 
+#[test]
+fn test_decryption_with_corrupted_file() {
+    let user = User::new(USERNAME.to_string(), PASSWORD.to_string());
+    let result = encrypt_data(&user,"pass");
+    assert!(result.is_ok());
+    let mut result = result.unwrap();
+
+    //Now let's corrupt the file
+    result[0] = 0x00;
+    result[1] = 0x12;
+    result[2] = 0x34;
+
+
+    let decripted = decrypt_data(&user,&result);
+    assert!(decripted.is_err());
+    let decripted_error = decripted.unwrap_err();
+    let decripted_error = decripted_error.downcast_ref::<EncryptionError>().unwrap();
+    assert_eq!(std::mem::discriminant(decripted_error), std::mem::discriminant(&EncryptionError::DecryptionError{ info: "something".to_string() }));
+}
+
 
 //TODO: Write more tests!

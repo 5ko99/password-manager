@@ -113,20 +113,11 @@ pub fn encrypt_data(user: &User, block: &str) -> Result<Vec<u8>, Box<dyn Error>>
 
     let username_for_salt = creating_username_for_salt(&user.username);
 
-    let salt = match creating_salt(&username_for_salt) {
-        Ok(salt) => salt,
-        Err(e) => return Err(e.into()),
-    };
+    let salt =creating_salt(&username_for_salt)?;
 
-    let password_hash = match creating_password_hash(password, &salt) {
-        Ok(hash) => hash,
-        Err(e) => return Err(e.into()),
-    };
+    let password_hash = creating_password_hash(password, &salt)?;
 
-    let cipher = match creating_cipher_enc(&password_hash, &username_for_salt) {
-        Ok(cipher) => cipher,
-        Err(e) => return Err(e.into()),
-    };
+    let cipher = creating_cipher_enc(&password_hash, &username_for_salt)?;
 
     let encrypt_block = cipher.encrypt_padded_vec_mut::<Pkcs7>(block.as_bytes());
 
@@ -155,20 +146,11 @@ pub fn decrypt_data(user: &User, block: &Vec<u8>) -> Result<String, Box<dyn Erro
 
     let username_for_salt = creating_username_for_salt(&user.username);
 
-    let salt = match creating_salt(&username_for_salt) {
-        Ok(salt) => salt,
-        Err(e) => return Err(e.into()),
-    };
+    let salt = creating_salt(&username_for_salt)?;
 
-    let password_hash = match creating_password_hash(password, &salt) {
-        Ok(hash) => hash,
-        Err(e) => return Err(e.into()),
-    };
+    let password_hash = creating_password_hash(password, &salt)?;
 
-    let cipher = match creating_cipher_dec(&password_hash, &username_for_salt) {
-        Ok(cipher) => cipher,
-        Err(e) => return Err(e.into()),
-    };
+    let cipher = creating_cipher_dec(&password_hash, &username_for_salt)?;
 
     let decrypt_block = cipher.decrypt_padded_vec_mut::<Pkcs7>(block.as_slice());
 
@@ -176,7 +158,7 @@ pub fn decrypt_data(user: &User, block: &Vec<u8>) -> Result<String, Box<dyn Erro
         Ok(block) => block,
         Err(e) => {
             return Err(EncryptionError::DecryptionError {
-                info: e.to_string(),
+                info: format!("{} Corrupted data file of the user!", e.to_string()),
             }
             .into());
         }
