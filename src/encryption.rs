@@ -6,7 +6,7 @@ use pbkdf2::{
 use snafu::Snafu;
 use std::error::Error;
 
-use crate::program::User;
+use crate::user::User;
 
 type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
@@ -113,7 +113,7 @@ pub fn encrypt_data(user: &User, block: &str) -> Result<Vec<u8>, Box<dyn Error>>
 
     let username_for_salt = creating_username_for_salt(&user.username);
 
-    let salt =creating_salt(&username_for_salt)?;
+    let salt = creating_salt(&username_for_salt)?;
 
     let password_hash = creating_password_hash(password, &salt)?;
 

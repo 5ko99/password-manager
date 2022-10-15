@@ -22,6 +22,7 @@ use tui::Terminal;
 
 use crate::encryption::{decrypt_data, encrypt_data, EncryptionError};
 use crate::record::Record;
+use crate::user::User;
 
 const PATH_TO_CONFIG: &str = "./data/.conf";
 
@@ -55,22 +56,6 @@ pub struct Program {
     search_term: String,
     search_results: Vec<usize>,
     search_results_index: Option<usize>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct User {
-    pub username: String, // must be max 16 characters long
-    pub password: String,
-}
-
-impl User {
-    pub fn new(username: String, password: String) -> User {
-        User { username, password }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.username.is_empty() || self.password.is_empty()
-    }
 }
 
 enum ProgramEvent<I> {
@@ -244,7 +229,7 @@ impl Program {
                             match popup {
                                 Popup::RecordAlreadyExists { name: _ } => {
                                     if let Some(help_paragraph) =
-                                        Program::render_help_line(MenuItem::Main)
+                                        Program::render_help_line(MenuItem::Main,&self.logged_user.as_ref().unwrap().username)
                                     {
                                         rect.render_widget(help_paragraph, chunks[2]);
                                     }
@@ -274,7 +259,7 @@ impl Program {
                                 }
                             }
                         } else if let Some(help_paragraph) =
-                            Program::render_help_line(MenuItem::Main)
+                            Program::render_help_line(MenuItem::Main,&self.logged_user.as_ref().unwrap().username)
                         {
                             rect.render_widget(help_paragraph, chunks[2]);
                         }
@@ -300,7 +285,7 @@ impl Program {
                             ));
                             rect.render_widget(popup_content, chunks[2]);
                         } else if let Some(help_paragraph) =
-                            Program::render_help_line(MenuItem::Add)
+                            Program::render_help_line(MenuItem::Add,&self.logged_user.as_ref().unwrap().username)
                         {
                             rect.render_widget(help_paragraph, chunks[2]);
                         }
@@ -906,7 +891,7 @@ impl Program {
             Spans::from(vec![Span::raw("When you need to confirm something, a message will be shown in the bottom of the screen. Press 'y' to confirm and 'n' to cancel.")]),
             Spans::from(vec![Span::raw("Press `delete` to delete your account and all saved passwords.")]),
         ])
-        .alignment(Alignment::Center)
+        .alignment(Alignment::Left)
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -917,10 +902,12 @@ impl Program {
         home
     }
 
-    fn render_help_line<'a>(active_menu_item: MenuItem) -> Option<Paragraph<'a>> {
+    fn render_help_line<'a>(active_menu_item: MenuItem, logged_user :&str) -> Option<Paragraph<'a>> {
+        let logged_user_msg = format!("Logged in as: {}", logged_user);
         match active_menu_item {
             MenuItem::Main => {
                 let paragraph = Paragraph::new(vec![
+                    Spans::from(vec![Span::raw(logged_user_msg)]),
                     Spans::from(vec![Span::raw("Press 'a' to add a new record. Press 'e' to start editing the current record. Press 'f' to open search box.")]),
                     Spans::from(vec![Span::raw("To cancel search press ESC. Press 'up' and 'down' arrows to navigate through fields. Press 'd' to delete the current record.")]),
                     Spans::from(vec![Span::raw("Press 's'` to toggle showing the password. Use 'left' and 'right' arrows to navigate through menus.")]),

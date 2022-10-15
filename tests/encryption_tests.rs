@@ -1,4 +1,4 @@
-use password_manager::{program::{User}, encryption::{encrypt_data, decrypt_data, EncryptionError}};
+use password_manager::{encryption::{encrypt_data, decrypt_data, EncryptionError}, user::User};
 
 
 const USERNAME : &str = "testuser";
@@ -53,6 +53,7 @@ fn test_encryption_with_empty_string() {
 }
 
 #[test]
+#[ignore]
 fn test_encryption_with_empty_user() {
     let user = User::new("".to_string(), "".to_string());
     let result = encrypt_data(&user,&"pass");
@@ -63,6 +64,7 @@ fn test_encryption_with_empty_user() {
 }
 
 #[test]
+#[ignore]
 fn test_decryption_with_empty_user() {
     let user = User::new("".to_string(), "".to_string());
     let test_vec : Vec<u8> = vec![0,1,2,3,4,5,6,7,8,9];
@@ -126,5 +128,19 @@ fn test_decryption_with_corrupted_file() {
     assert_eq!(std::mem::discriminant(decripted_error), std::mem::discriminant(&EncryptionError::DecryptionError{ info: "something".to_string() }));
 }
 
+#[test]
+fn test_encryption_and_decryption_with_invalid_password() {
+    let user = User::new(USERNAME.to_string(), PASSWORD.to_string()); 
+    let result = encrypt_data(&user,&"random text");
+    assert!(result.is_ok());
+    let result = result.unwrap();
+    
+    let user = User::new(USERNAME.to_string(), PASSWORD2.to_string()); //wrong password
+    let decripted = decrypt_data(&user,&result);
+    assert!(decripted.is_err());
+    let decripted_error = decripted.unwrap_err();
+    let decripted_error = decripted_error.downcast_ref::<EncryptionError>().unwrap();
+    assert_eq!(std::mem::discriminant(decripted_error), std::mem::discriminant(&EncryptionError::DecryptionError{ info: "something".to_string() }));
+}
 
 //TODO: Write more tests!

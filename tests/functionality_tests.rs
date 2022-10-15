@@ -1,5 +1,6 @@
 use password_manager::{
-    program::{Program, User},
+    program::{Program},
+    user::User,
     record::Record,
 };
 
