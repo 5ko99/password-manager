@@ -4,6 +4,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 use std::{fs, thread};
 
+use aes::cipher::Key;
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use naive_opt::string_search_indices;
@@ -51,11 +52,12 @@ pub struct Program {
     active_menu_item: MenuItem,
     logged_user: Option<User>,
     show_password: bool,
-    edit_mode: bool,
     popup: Option<Popup>,
     search_term: String,
     search_results: Vec<usize>,
     search_results_index: Option<usize>,
+    editing_existing_record: bool,
+    mode: Mode,
 }
 
 enum ProgramEvent<I> {
@@ -68,6 +70,14 @@ enum MenuItem {
     Main,
     Add,
     Help,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum Mode {
+    Normal,
+    Insert,
+    Popup,
+    Search,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,11 +108,12 @@ impl Program {
             active_menu_item: MenuItem::Main,
             logged_user: None,
             show_password: false,
-            edit_mode: false,
             popup: None,
             search_term: String::new(),
             search_results: Vec::new(),
             search_results_index: None,
+            editing_existing_record: false,
+            mode: Mode::Normal,
         }
     }
 
@@ -228,9 +239,10 @@ impl Program {
                         if let Some(popup) = &self.popup {
                             match popup {
                                 Popup::RecordAlreadyExists { name: _ } => {
-                                    if let Some(help_paragraph) =
-                                        Program::render_help_line(MenuItem::Main,&self.logged_user.as_ref().unwrap().username)
-                                    {
+                                    if let Some(help_paragraph) = Program::render_help_line(
+                                        MenuItem::Main,
+                                        &self.logged_user.as_ref().unwrap().username,
+                                    ) {
                                         rect.render_widget(help_paragraph, chunks[2]);
                                     }
                                 }
@@ -258,13 +270,16 @@ impl Program {
                                     rect.render_widget(popup_content, chunks[2]);
                                 }
                             }
-                        } else if let Some(help_paragraph) =
-                            Program::render_help_line(MenuItem::Main,&self.logged_user.as_ref().unwrap().username)
-                        {
+                        } else if let Some(help_paragraph) = Program::render_help_line(
+                            MenuItem::Main,
+                            &self.logged_user.as_ref().unwrap().username,
+                        ) {
                             rect.render_widget(help_paragraph, chunks[2]);
                         }
                     }
-                    MenuItem::Help => rect.render_widget(Program::render_help(), chunks[1]),
+                    MenuItem::Help => {
+                        rect.render_widget(Program::render_help(), chunks[1]);
+                    }
                     MenuItem::Add => {
                         let edit_chunk = Layout::default()
                             .direction(Direction::Horizontal)
@@ -284,9 +299,10 @@ impl Program {
                                 name
                             ));
                             rect.render_widget(popup_content, chunks[2]);
-                        } else if let Some(help_paragraph) =
-                            Program::render_help_line(MenuItem::Add,&self.logged_user.as_ref().unwrap().username)
-                        {
+                        } else if let Some(help_paragraph) = Program::render_help_line(
+                            MenuItem::Add,
+                            &self.logged_user.as_ref().unwrap().username,
+                        ) {
                             rect.render_widget(help_paragraph, chunks[2]);
                         }
                     }
@@ -533,269 +549,186 @@ impl Program {
         edit_list_state: &mut ListState,
         edit_record: &mut Record,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // handle events
+        match self.mode {
+            Mode::Normal => {
+                self.handle_input_normal_mode(rx, records_list_state, edit_list_state, edit_record)
+            }
+            Mode::Insert => {
+                self.handle_input_insert_mode(rx, records_list_state, edit_list_state, edit_record)
+            }
+            Mode::Popup => {
+                self.handle_input_popup_mode(rx, records_list_state, edit_list_state, edit_record)
+            }
+            Mode::Search => {
+                self.handle_input_search_mode(rx, records_list_state, edit_list_state, edit_record)
+            }
+        }
+    }
+
+    fn handle_input_normal_mode(
+        &mut self,
+        rx: &Receiver<ProgramEvent<KeyEvent>>,
+        records_list_state: &mut ListState,
+        edit_list_state: &mut ListState,
+        edit_record: &mut Record,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         match rx.recv()? {
             ProgramEvent::Input(event) => match event.code {
                 KeyCode::Char('q') => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_term.push('q');
-                    } else if self.active_menu_item != MenuItem::Add {
-                        self.active_menu_item = MenuItem::Main;
-                        self.popup = Some(Popup::Exit);
-                    } else {
-                        Program::write_letter('q', edit_list_state, edit_record);
-                    }
+                    self.active_menu_item = MenuItem::Main;
+                    self.popup = Some(Popup::Exit);
+                    self.mode = Mode::Popup;
                 }
-                KeyCode::Char('h') => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_term.push('h');
-                    } else if self.active_menu_item != MenuItem::Add {
-                        self.active_menu_item = MenuItem::Help;
-                    } else {
-                        Program::write_letter('h', edit_list_state, edit_record);
-                    }
-                }
+                KeyCode::Char('h') => self.active_menu_item = MenuItem::Help,
                 KeyCode::Char('a') => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_term.push('a');
-                    } else if self.active_menu_item != MenuItem::Add {
-                        self.active_menu_item = MenuItem::Add;
-                        edit_list_state.select(Some(0));
-                    } else {
-                        Program::write_letter('a', edit_list_state, edit_record);
-                    }
+                    self.active_menu_item = MenuItem::Add;
+                    edit_list_state.select(Some(0));
                 }
-                KeyCode::Char('m') => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_term.push('m');
-                    } else if self.active_menu_item != MenuItem::Add {
-                        self.active_menu_item = MenuItem::Main;
-                    } else {
-                        Program::write_letter('m', edit_list_state, edit_record);
-                    }
-                }
-                KeyCode::Char('s') => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_term.push('s');
-                    } else if self.active_menu_item != MenuItem::Add {
-                        self.show_password = !self.show_password;
-                    } else {
-                        Program::write_letter('s', edit_list_state, edit_record);
-                    }
-                }
-                KeyCode::Char('d') => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_term.push('d');
-                    } else if self.active_menu_item == MenuItem::Main {
-                        self.popup = Some(Popup::DeleteARecord);
-                    } else if self.active_menu_item == MenuItem::Add {
-                        Program::write_letter('d', edit_list_state, edit_record);
-                    }
+                KeyCode::Char('m') => self.active_menu_item = MenuItem::Main,
+                KeyCode::Char('s') => self.show_password = !self.show_password,
+                KeyCode::Char('d') | KeyCode::Delete => {
+                    self.popup = Some(Popup::DeleteARecord);
+                    self.mode = Mode::Popup;
                 }
                 KeyCode::Char('e') => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_term.push('e');
-                    } else if self.active_menu_item == MenuItem::Main {
-                        self.active_menu_item = MenuItem::Add;
-                        edit_list_state.select(Some(0));
-                        if let Some(selected) = records_list_state.selected() {
-                            edit_record.clone_from(&self.records[selected]);
-                            self.edit_mode = true;
-                        }
-                    } else if self.active_menu_item == MenuItem::Add {
-                        Program::write_letter('e', edit_list_state, edit_record);
-                    }
-                }
-                KeyCode::Char('n') => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_term.push('n');
-                    } else if self.active_menu_item == MenuItem::Main {
-                        self.popup = None;
-                    } else if self.active_menu_item == MenuItem::Add {
-                        Program::write_letter('n', edit_list_state, edit_record);
+                    self.active_menu_item = MenuItem::Add;
+                    self.mode = Mode::Insert;
+                    self.editing_existing_record = true;
+                    edit_list_state.select(Some(0));
+                    if let Some(selected) = records_list_state.selected() {
+                        edit_record.clone_from(&self.records[selected]);
                     }
                 }
                 KeyCode::Char('f') => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_term.push('f');
-                    } else if self.active_menu_item == MenuItem::Main {
-                        self.popup = Some(Popup::Search);
-                    } else if self.active_menu_item == MenuItem::Add {
-                        Program::write_letter('f', edit_list_state, edit_record);
-                    }
-                }
-                KeyCode::Char('y') => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_term.push('y');
-                    } else if self.active_menu_item == MenuItem::Main {
-                        if let Some(popup) = &self.popup {
-                            match popup {
-                                Popup::DeleteARecord => {
-                                    if let Some(selected) = records_list_state.selected() {
-                                        self.records.remove(selected);
-                                        records_list_state.select(Some(0));
-                                    } else {
-                                        return Err(Box::new(LogicError::NoSelectedRecord {}));
-                                    }
-                                }
-                                Popup::DeleteAnAccount => {
-                                    if let Some(user) = self.logged_user.as_ref() {
-                                        self.delete_user(user.username.clone().as_ref())?;
-                                    } else {
-                                        return Err(Box::new(LogicError::NoLoggedUser {}));
-                                    }
-                                }
-                                Popup::Exit => self.should_quit = true,
-                                _ => {}
-                            }
-                        }
-                        self.popup = None;
-                    } else if self.active_menu_item == MenuItem::Add {
-                        Program::write_letter('y', edit_list_state, edit_record);
-                    }
+                    self.popup = Some(Popup::Search);
+                    self.mode = Mode::Search;
                 }
                 KeyCode::Up => {
-                    if self.active_menu_item == MenuItem::Main {
-                        if let Some(selected) = records_list_state.selected() {
-                            let records_len = self.records.len();
-                            if selected == 0 {
-                                records_list_state.select(Some(records_len - 1));
-                            } else {
-                                records_list_state.select(Some(selected - 1));
-                            }
-                        }
-                    } else if self.active_menu_item == MenuItem::Add {
-                        if let Some(selected) = edit_list_state.selected() {
-                            let len = Record::len(); // this is hardcoded for now
-                            if selected == 0 {
-                                edit_list_state.select(Some(len - 1));
-                            } else {
-                                edit_list_state.select(Some(selected - 1));
-                            }
+                    if let Some(selected) = records_list_state.selected() {
+                        let records_len = self.records.len();
+                        if selected == 0 {
+                            records_list_state.select(Some(records_len - 1));
+                        } else {
+                            records_list_state.select(Some(selected - 1));
                         }
                     }
                 }
                 KeyCode::Down => {
-                    if self.active_menu_item == MenuItem::Main {
-                        if let Some(selected) = records_list_state.selected() {
-                            let records_len = self.records.len();
-                            if selected >= records_len - 1 {
-                                records_list_state.select(Some(0));
-                            } else {
-                                records_list_state.select(Some(selected + 1));
-                            }
-                        }
-                    } else if self.active_menu_item == MenuItem::Add {
-                        if let Some(selected) = edit_list_state.selected() {
-                            let len = Record::len(); // this is hardcoded for now
-                            if selected >= len - 1 {
-                                edit_list_state.select(Some(0));
-                            } else {
-                                edit_list_state.select(Some(selected + 1));
-                            }
+                    if let Some(selected) = records_list_state.selected() {
+                        let records_len = self.records.len();
+                        if selected >= records_len - 1 {
+                            records_list_state.select(Some(0));
+                        } else {
+                            records_list_state.select(Some(selected + 1));
                         }
                     }
                 }
                 KeyCode::Left => {
-                    if self.active_menu_item == MenuItem::Main
-                        && self.popup == Some(Popup::Search)
-                        && !self.search_results.is_empty()
-                    {
-                        if let Some(selected) = self.search_results_index {
-                            if selected == 0 {
-                                self.search_results_index = Some(self.search_results.len() - 1);
-                            } else {
-                                self.search_results_index = Some(selected - 1);
-                            }
-                            records_list_state.select(Some(
-                                self.search_results[self.search_results_index.unwrap()],
-                            ));
-                        }
+                    if self.active_menu_item == MenuItem::Main {
+                        self.active_menu_item = MenuItem::Help;
                     } else {
-                        match self.active_menu_item {
-                            MenuItem::Main => self.active_menu_item = MenuItem::Help,
-                            MenuItem::Add => self.active_menu_item = MenuItem::Main,
-                            MenuItem::Help => self.active_menu_item = MenuItem::Add,
-                        }
+                        //on help
+                        self.active_menu_item = MenuItem::Add;
+                        self.mode = Mode::Insert;
                     }
                 }
                 KeyCode::Right => {
-                    if self.active_menu_item == MenuItem::Main
-                        && self.popup == Some(Popup::Search)
-                        && !self.search_results.is_empty()
-                    {
-                        if let Some(selected) = self.search_results_index {
-                            if selected == self.search_results.len() - 1 {
-                                self.search_results_index = Some(0);
-                            } else {
-                                self.search_results_index = Some(selected + 1);
-                            }
-                            records_list_state.select(Some(
-                                self.search_results[self.search_results_index.unwrap()],
-                            ));
-                        }
+                    if self.active_menu_item == MenuItem::Main {
+                        self.active_menu_item = MenuItem::Add;
+                        self.mode = Mode::Insert;
                     } else {
-                        match self.active_menu_item {
-                            MenuItem::Main => self.active_menu_item = MenuItem::Add,
-                            MenuItem::Add => self.active_menu_item = MenuItem::Help,
-                            MenuItem::Help => self.active_menu_item = MenuItem::Main,
-                        }
-                    }
-                }
-                KeyCode::Char(c) => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_term.push(c);
-                    } else if self.active_menu_item == MenuItem::Add {
-                        Program::write_letter(c, edit_list_state, edit_record);
-                    }
-                }
-                KeyCode::Backspace => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_term.pop();
-                    } else if self.active_menu_item == MenuItem::Add {
-                        if let Some(selected) = edit_list_state.selected() {
-                            let data = &mut edit_record[selected];
-                            data.pop();
-                        }
+                        //on help
+                        self.active_menu_item = MenuItem::Main;
                     }
                 }
                 KeyCode::Esc => {
-                    if self.active_menu_item == MenuItem::Add {
-                        self.active_menu_item = MenuItem::Main;
-                    } else if self.active_menu_item == MenuItem::Main {
-                        self.popup = None;
-                        self.search_results.clear();
-                        self.search_results_index = None;
+                    self.popup = None;
+                    self.search_results.clear();
+                    self.search_results_index = None;
+                    self.mode = Mode::Normal;
+                }
+                KeyCode::F(n) => self.copy_to_clipboard(records_list_state, n),
+                _ => {}
+            },
+            ProgramEvent::Tick => {}
+        }
+        Ok(())
+    }
+
+    fn copy_to_clipboard(&self, records_list_state: &mut ListState, n: u8) {
+        let selected_record = self
+            .records
+            .get(
+                records_list_state
+                    .selected()
+                    .expect("there is always a selected record"),
+            )
+            .unwrap();
+        let data = match n {
+            1 => selected_record.username.clone(),
+            2 => selected_record.email.clone(),
+            3 => selected_record.password.clone(),
+            _ => "".to_string(),
+        };
+        terminal_clipboard::set_string(data);
+    }
+
+    fn handle_input_insert_mode(
+        &mut self,
+        rx: &Receiver<ProgramEvent<KeyEvent>>,
+        records_list_state: &mut ListState,
+        edit_list_state: &mut ListState,
+        edit_record: &mut Record,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        match rx.recv()? {
+            ProgramEvent::Input(event) => match event.code {
+                KeyCode::Char(letter) => {
+                    Program::write_letter(letter, edit_list_state, edit_record)
+                }
+                KeyCode::Up => {
+                    if let Some(selected) = edit_list_state.selected() {
+                        let len = Record::len(); // this is hardcoded for now
+                        if selected == 0 {
+                            edit_list_state.select(Some(len - 1));
+                        } else {
+                            edit_list_state.select(Some(selected - 1));
+                        }
                     }
                 }
-                KeyCode::Enter => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_results = Program::search(&self.records, &self.search_term);
-                        if !self.search_results.is_empty() {
-                            self.search_results_index = Some(0);
-                            records_list_state.select(Some(self.search_results[0]));
+                KeyCode::Down => {
+                    if let Some(selected) = edit_list_state.selected() {
+                        let len = Record::len(); // this is hardcoded for now
+                        if selected >= len - 1 {
+                            edit_list_state.select(Some(0));
                         } else {
-                            self.popup = None;
+                            edit_list_state.select(Some(selected + 1));
                         }
-                    } else if self.active_menu_item == MenuItem::Add && !edit_record.name.is_empty()
-                    {
+                    }
+                }
+                KeyCode::Left => {
+                    self.active_menu_item = MenuItem::Main;
+                    self.mode = Mode::Normal;
+                }
+                KeyCode::Right => {
+                    self.active_menu_item = MenuItem::Help;
+                    self.mode = Mode::Normal;
+                }
+                KeyCode::Backspace | KeyCode::Delete => {
+                    if let Some(selected) = edit_list_state.selected() {
+                        let data = &mut edit_record[selected];
+                        data.pop();
+                    }
+                }
+                KeyCode::Esc => {
+                    self.active_menu_item = MenuItem::Main;
+                    self.mode = Mode::Normal;
+                }
+                KeyCode::Enter => {
+                    if !edit_record.name.is_empty() {
                         // Remove the popup if there is one
                         self.popup = None;
 
-                        if self.edit_mode {
+                        if self.editing_existing_record {
                             if let Some(r) = self.records.iter_mut().find(|r| r == &edit_record) {
                                 r.clone_from(edit_record);
                                 self.active_menu_item = MenuItem::Main;
@@ -807,68 +740,149 @@ impl Program {
                         }
                         edit_record.clear();
                     }
+                    self.active_menu_item = MenuItem::Main;
+                    self.mode = Mode::Normal;
                 }
-                KeyCode::Delete => {
-                    if self.active_menu_item == MenuItem::Main && self.popup == Some(Popup::Search)
-                    {
-                        self.search_term.clear();
-                    } else if self.active_menu_item == MenuItem::Main {
-                        self.popup = Some(Popup::DeleteAnAccount);
-                    } else if self.active_menu_item == MenuItem::Add {
-                        if let Some(selected) = edit_list_state.selected() {
-                            let data = &mut edit_record[selected];
-                            data.clear();
-                        }
-                    }
-                }
-                KeyCode::F(n) => {
-                    match n {
-                        1 | 2 | 3 => {
-                            // Copy the selected field 1 -> username, 2 -> email, 3 -> password
-                            let selected_record = self
-                                .records
-                                .get(
-                                    records_list_state
-                                        .selected()
-                                        .expect("there is always a selected record"),
-                                )
-                                .unwrap();
-                            let data = match n {
-                                1 => selected_record.username.clone(),
-                                2 => selected_record.email.clone(),
-                                3 => selected_record.password.clone(),
-                                _ => unreachable!(),
-                            };
-                            // Copy the data to the clipboard
-                            terminal_clipboard::set_string(data).unwrap();
-                        }
-                        4 => {
-                            // Password generator
-                            if self.active_menu_item == MenuItem::Add {
-                                let pg = PasswordGenerator {
-                                    length: 12,
-                                    numbers: true,
-                                    lowercase_letters: true,
-                                    uppercase_letters: true,
-                                    symbols: false,
-                                    spaces: false,
-                                    exclude_similar_characters: false,
-                                    strict: true,
-                                };
+                KeyCode::F(4) => {
+                    // Password generator
+                    //TODO: Improve this
+                    if self.active_menu_item == MenuItem::Add {
+                        let pg = PasswordGenerator {
+                            length: 12,
+                            numbers: true,
+                            lowercase_letters: true,
+                            uppercase_letters: true,
+                            symbols: false,
+                            spaces: false,
+                            exclude_similar_characters: false,
+                            strict: true,
+                        };
 
-                                let password = pg.generate_one();
-                                if let Ok(password) = password {
-                                    edit_record.password = password;
-                                }
-                            }
+                        let password = pg.generate_one();
+                        if let Ok(password) = password {
+                            edit_record.password = password;
                         }
-                        _ => {}
                     }
                 }
                 _ => {}
             },
             ProgramEvent::Tick => {}
         }
+        Ok(())
+    }
+
+    fn handle_input_popup_mode(
+        &mut self,
+        rx: &Receiver<ProgramEvent<KeyEvent>>,
+        records_list_state: &mut ListState,
+        edit_list_state: &mut ListState,
+        edit_record: &mut Record,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        match rx.recv()? {
+            ProgramEvent::Input(event) => match event.code {
+                KeyCode::Char('n') => {
+                    self.popup = None;
+                    self.mode = Mode::Normal;
+                }
+                KeyCode::Char('y') => {
+                    if let Some(popup) = &self.popup {
+                        match popup {
+                            Popup::DeleteARecord => {
+                                if let Some(selected) = records_list_state.selected() {
+                                    self.records.remove(selected);
+                                    records_list_state.select(Some(0));
+                                } else {
+                                    return Err(Box::new(LogicError::NoSelectedRecord {}));
+                                }
+                            }
+                            Popup::DeleteAnAccount => {
+                                if let Some(user) = self.logged_user.as_ref() {
+                                    self.delete_user(user.username.clone().as_ref())?;
+                                } else {
+                                    return Err(Box::new(LogicError::NoLoggedUser {}));
+                                }
+                            }
+                            Popup::Exit => self.should_quit = true,
+                            _ => {}
+                        }
+                    }
+                    self.popup = None;
+                    self.mode = Mode::Normal;
+                }
+                _ => {}
+            },
+            ProgramEvent::Tick => {}
+        }
+        Ok(())
+    }
+
+    fn handle_input_search_mode(
+        &mut self,
+        rx: &Receiver<ProgramEvent<KeyEvent>>,
+        records_list_state: &mut ListState,
+        edit_list_state: &mut ListState,
+        edit_record: &mut Record,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        match rx.recv()? {
+            ProgramEvent::Input(event) => match event.code {
+                KeyCode::Char(letter) => {
+                    self.search_term.push(letter);
+                }
+                KeyCode::Left => {
+                    if !self.search_results.is_empty() {
+                        if let Some(selected) = self.search_results_index {
+                            if selected == 0 {
+                                self.search_results_index = Some(self.search_results.len() - 1);
+                            } else {
+                                self.search_results_index = Some(selected - 1);
+                            }
+                            records_list_state.select(Some(
+                                self.search_results[self.search_results_index.unwrap()],
+                            ));
+                        }
+                    }
+                }
+                KeyCode::Right => {
+                    if !self.search_results.is_empty() {
+                        if let Some(selected) = self.search_results_index {
+                            if selected == self.search_results.len() - 1 {
+                                self.search_results_index = Some(0);
+                            } else {
+                                self.search_results_index = Some(selected + 1);
+                            }
+                            records_list_state.select(Some(
+                                self.search_results[self.search_results_index.unwrap()],
+                            ));
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    self.search_term.pop();
+                }
+                KeyCode::Delete => {
+                    self.search_term.clear();
+                }
+                KeyCode::Esc => {
+                    self.popup = None;
+                    self.search_results.clear();
+                    self.search_results_index = None;
+                    self.mode = Mode::Normal;
+                }
+                KeyCode::Enter => {
+                    self.search_results = Program::search(&self.records, &self.search_term);
+                    if !self.search_results.is_empty() {
+                        self.search_results_index = Some(0);
+                        records_list_state.select(Some(self.search_results[0]));
+                    } else {
+                        self.popup = None;
+                        self.mode = Mode::Normal;
+                    }
+                }
+                _ => {}
+            },
+            ProgramEvent::Tick => {}
+        }
+
         Ok(())
     }
 
@@ -902,7 +916,10 @@ impl Program {
         home
     }
 
-    fn render_help_line<'a>(active_menu_item: MenuItem, logged_user :&str) -> Option<Paragraph<'a>> {
+    fn render_help_line<'a>(
+        active_menu_item: MenuItem,
+        logged_user: &str,
+    ) -> Option<Paragraph<'a>> {
         let logged_user_msg = format!("Logged in as: {}", logged_user);
         match active_menu_item {
             MenuItem::Main => {
@@ -1128,7 +1145,7 @@ impl Program {
                 Ok(data) => data,
                 Err(error) => match error.downcast_ref::<EncryptionError>().unwrap() {
                     EncryptionError::EmptyBlockError {} => String::new(),
-                    _ => return Err(error)
+                    _ => return Err(error),
                 },
             };
 
