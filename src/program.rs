@@ -20,13 +20,13 @@ use tui::widgets::{
 use tui::Terminal;
 
 use crate::encryption::{decrypt_data, encrypt_data, EncryptionError};
-use crate::input_handler::{handle_input};
+use crate::input_handler::handle_input;
 use crate::record::Record;
 use crate::user::User;
 
 const PATH_TO_CONFIG: &str = "./data/.conf";
 
-const MINIMUM_PASSWORD_LENGTH: usize = 4;
+pub const MINIMUM_PASSWORD_LENGTH: usize = 4;
 
 const MENU_TITLES: &[&str] = &["Main", "Add/Edit", "Help"];
 
@@ -42,6 +42,8 @@ pub enum LogicError {
     NoSelectedRecord {},
     #[snafu(display("Unexpected error: {err}"))]
     UnexpectedError { err: String },
+    #[snafu(display("Password must be at least {err} chars:"))]
+    PasswordTooShort { err: usize },
 }
 
 pub struct Program {
@@ -270,7 +272,8 @@ impl Program {
                                     rect.render_widget(popup_content, chunks[2]);
                                 }
                                 Popup::Error { message } => {
-                                    let message = format!("Error! {} Press esc to close the popup.", message);
+                                    let message =
+                                        format!("Error! {} Press esc to close the popup.", message);
                                     let popup_content = Program::render_popup(&message);
                                     rect.render_widget(popup_content, chunks[2]);
                                 }
@@ -548,7 +551,11 @@ impl Program {
         }
     }
 
-    pub fn copy_to_clipboard(&self, records_list_state: &mut ListState, n: u8) -> Result<(), ClipboardError> {
+    pub fn copy_to_clipboard(
+        &self,
+        records_list_state: &mut ListState,
+        n: u8,
+    ) -> Result<(), ClipboardError> {
         let selected_record = self
             .records
             .get(
@@ -888,5 +895,25 @@ impl Program {
             Some(user) => Some(user),
             None => None,
         }
+    }
+
+    //TODO: this is not workin properly debug it!
+    pub fn change_password(&mut self, new_pass: &str) -> Result<(), Box<dyn Error>> {
+        let new_pass = digest(new_pass);
+        if let Some(user) = &mut self.logged_user {
+            user.change_password(&new_pass)?;
+            let mut users = Program::load_config().expect("Critical error: failed to load config");
+            let user_index = users
+                .iter()
+                .position(|u| u.username == user.username)
+                .expect("Critical error: failed to find user in config");
+            users[user_index] = user.clone();
+            fs::write(PATH_TO_CONFIG, &serde_json::to_vec(&users)?)?;
+            self.save_data()?;
+            self.logout()?;
+        } else {
+            return Err(Box::new(LogicError::NoLoggedUser));
+        }
+        Ok(())
     }
 }

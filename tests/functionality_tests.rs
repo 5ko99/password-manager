@@ -1,13 +1,9 @@
-use password_manager::{
-    program::{Program},
-    user::User,
-    record::Record,
-};
+use password_manager::{program::Program, record::Record, user::User};
 
 use sha256::digest;
 
-const USERNAME : &str = "testuser";
-const PASSWORD : &str = "1234";
+const USERNAME: &str = "testuser";
+const PASSWORD: &str = "1234";
 
 #[test]
 fn test_add_record() {
@@ -19,18 +15,8 @@ fn test_add_record() {
         .unwrap();
 
     let record1 = Record::new("rec1", "Petko", "", "");
-    let record2 = Record::new(
-        "rec2",
-        "Petko",
-        "petko@abv.bg",
-        "1234",
-    );
-    let record3 = Record::new(
-        "rec3",
-        "vanyo",
-        "vanyo@abv.bg",
-        "123456",
-    );
+    let record2 = Record::new("rec2", "Petko", "petko@abv.bg", "1234");
+    let record3 = Record::new("rec3", "vanyo", "vanyo@abv.bg", "123456");
     assert!(program.add_record(record1.clone()).is_ok());
     assert_eq!(program.get_len_of_records(), 1);
 
@@ -96,12 +82,7 @@ fn test_delete_record() {
         .login(USERNAME.to_string(), PASSWORD.to_string(), digest(PASSWORD))
         .is_ok());
     let record1 = Record::new("rec1", "Petko", "", "");
-    let record2 = Record::new(
-        "rec2",
-        "Petko",
-        "petko@abv.bg",
-        "1234",
-    );
+    let record2 = Record::new("rec2", "Petko", "petko@abv.bg", "1234");
     assert!(program.add_record(record1).is_ok());
     assert!(program.add_record(record2).is_ok());
     assert_eq!(program.get_len_of_records(), 2);
@@ -175,7 +156,7 @@ fn test_search_with_two_matches() {
 fn test_search_with_four_matches() {
     let records = vec![
         Record::new("petko", "", "", ""), // 1
-        Record::new("gosho", "", "", "",),
+        Record::new("gosho", "", "", ""),
         Record::new("chefo", "", "", ""),
         Record::new("pet", "", "", ""), // 4
         Record::new("Vili", "", "", ""),
@@ -213,12 +194,12 @@ fn test_search_with_multiple_matches_2() {
 #[test]
 fn test_search_with_four_matches_and_two_matches_in_word() {
     let records = vec![
-        Record::new("gosho", "", "", ""), // 1 no match
-        Record::new("chefo", "", "", ""), // 2 no match
+        Record::new("gosho", "", "", ""),               // 1 no match
+        Record::new("chefo", "", "", ""),               // 2 no match
         Record::new("petko petkov petkov", "", "", ""), // match 3
-        Record::new("vili petkov", "", "", ""), // match 4
-        Record::new("ivan", "", "", ""), // 5 no match
-        Record::new("petko", "", "", ""), // 6 match
+        Record::new("vili petkov", "", "", ""),         // match 4
+        Record::new("ivan", "", "", ""),                // 5 no match
+        Record::new("petko", "", "", ""),               // 6 match
     ];
     let needle = "petko";
     let result = Program::search(&records, needle);
@@ -227,4 +208,40 @@ fn test_search_with_four_matches_and_two_matches_in_word() {
     assert_eq!(result[0], 2);
     assert_eq!(result[1], 3);
     assert_eq!(result[2], 5);
+}
+
+//TODO: check it
+#[test]
+#[ignore]
+fn change_pass_test() {
+    let mut program = Program::default();
+    let record = Record::new(
+        "Twitter",
+        "petko",
+        "petko@abv.bg",
+        "somepass123"
+    );
+
+    assert!(program
+        .login(USERNAME.to_string(), PASSWORD.to_string(), digest(PASSWORD))
+        .is_ok());
+
+    assert!(program
+        .add_record(record.clone())
+        .is_ok());
+
+    assert!(program.change_password("newpass").is_ok());
+    assert!(program
+        .login(
+            USERNAME.to_string(),
+            "newpass".to_string(),
+            digest("newpass")
+        )
+        .is_ok());
+
+    assert!(program.records.contains(&record));
+
+    //Finally
+    assert!(program.change_password(PASSWORD).is_ok());
+
 }
