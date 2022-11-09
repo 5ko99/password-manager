@@ -158,7 +158,7 @@ pub fn decrypt_data(user: &User, block: &Vec<u8>) -> Result<String, Box<dyn Erro
         Ok(block) => block,
         Err(e) => {
             return Err(EncryptionError::DecryptionError {
-                info: format!("{} Corrupted data file of the user!", e.to_string()),
+                info: format!("{} Corrupted data file of the user!", e),
             }
             .into());
         }
