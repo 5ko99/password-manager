@@ -535,7 +535,7 @@ impl Program {
             let path_to_data = format!("./data/{}.json", logged_user.username);
             let data = serde_json::to_string(&self.records)?;
             let encrypted_data = encrypt_data(logged_user, &data);
-            //fix the unwrap
+            //TODO: fix the unwrap
             fs::write(path_to_data, encrypted_data.unwrap())
                 .expect("Error while writing records to file!");
         } else {
@@ -814,7 +814,7 @@ impl Program {
         paragraph
     }
 
-    fn load_and_decrypt_data(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn load_and_decrypt_data(&mut self) -> Result<(), Box<dyn Error>> {
         if let Some(logged_user) = &self.logged_user {
             let path_to_data = format!("./data/{}.json", logged_user.username);
             let encrypted_data = fs::read(&path_to_data);
@@ -899,17 +899,17 @@ impl Program {
 
     //TODO: this is not workin properly debug it!
     pub fn change_password(&mut self, new_pass: &str) -> Result<(), Box<dyn Error>> {
-        let new_pass = digest(new_pass);
         if let Some(user) = &mut self.logged_user {
+            let new_pass_hash = digest(new_pass);
+            let user_with_new_pass_hash = User::new(user.username.clone(), new_pass_hash);
             user.change_password(&new_pass)?;
             let mut users = Program::load_config().expect("Critical error: failed to load config");
             let user_index = users
                 .iter()
                 .position(|u| u.username == user.username)
                 .expect("Critical error: failed to find user in config");
-            users[user_index] = user.clone();
+            users[user_index] = user_with_new_pass_hash;
             fs::write(PATH_TO_CONFIG, &serde_json::to_vec(&users)?)?;
-            self.save_data()?;
             self.logout()?;
         } else {
             return Err(Box::new(LogicError::NoLoggedUser));

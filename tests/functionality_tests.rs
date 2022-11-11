@@ -5,6 +5,8 @@ use sha256::digest;
 const USERNAME: &str = "testuser";
 const PASSWORD: &str = "1234";
 
+//TESTS MUST BE RUNNED WITH : cargo test -- --test-threads=1
+
 #[test]
 fn test_add_record() {
     let mut program = Program::default();
@@ -210,25 +212,16 @@ fn test_search_with_four_matches_and_two_matches_in_word() {
     assert_eq!(result[2], 5);
 }
 
-//TODO: check it
 #[test]
-#[ignore]
 fn change_pass_test() {
     let mut program = Program::default();
-    let record = Record::new(
-        "Twitter",
-        "petko",
-        "petko@abv.bg",
-        "somepass123"
-    );
+    let record = Record::new("Twitter", "petko", "petko@abv.bg", "somepass123");
 
     assert!(program
         .login(USERNAME.to_string(), PASSWORD.to_string(), digest(PASSWORD))
         .is_ok());
 
-    assert!(program
-        .add_record(record.clone())
-        .is_ok());
+    assert!(program.add_record(record.clone()).is_ok());
 
     assert!(program.change_password("newpass").is_ok());
     assert!(program
@@ -238,10 +231,10 @@ fn change_pass_test() {
             digest("newpass")
         )
         .is_ok());
+    assert!(program.load_and_decrypt_data().is_ok());
 
     assert!(program.records.contains(&record));
 
     //Finally
     assert!(program.change_password(PASSWORD).is_ok());
-
 }

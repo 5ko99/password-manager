@@ -53,30 +53,6 @@ fn test_encryption_with_empty_string() {
 }
 
 #[test]
-#[ignore]
-fn test_encryption_with_empty_user() {
-    let user = User::new("".to_string(), "".to_string());
-    let result = encrypt_data(&user,&"pass");
-    assert!(result.is_err());
-    let result_error = result.unwrap_err();
-    let result_error = result_error.downcast_ref::<EncryptionError>().unwrap();
-    assert_eq!(result_error, &EncryptionError::EmptyUserError{});
-}
-
-#[test]
-#[ignore]
-fn test_decryption_with_empty_user() {
-    let user = User::new("".to_string(), "".to_string());
-    let test_vec : Vec<u8> = vec![0,1,2,3,4,5,6,7,8,9];
-    let result = decrypt_data(&user,&test_vec);
-    assert!(result.is_err());
-    let result_error = result.unwrap_err();
-    let result_error = result_error.downcast_ref::<EncryptionError>().unwrap();
-    assert_eq!(result_error, &EncryptionError::EmptyUserError{});
-}
-
-
-#[test]
 fn test_decryption_with_empty_vec() {
     let user = User::new(USERNAME.to_string(), PASSWORD.to_string());
     let test_vec : Vec<u8> = vec![];
