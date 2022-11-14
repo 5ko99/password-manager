@@ -26,6 +26,9 @@ pub fn handle_input(
         Mode::Search => {
             handle_input_search_mode(program,rx, records_list_state)
         }
+        Mode::ChangePass => {
+            handle_input_change_password(program,rx)
+        }
     }
 }
 
@@ -110,6 +113,10 @@ fn handle_input_normal_mode(
                 program.search_results.clear();
                 program.search_results_index = None;
                 program.mode = Mode::Normal;
+            }
+            KeyCode::F(7) => {
+                program.popup = Some(Popup::ChangePassword);
+                program.mode = Mode::ChangePass;
             }
             KeyCode::F(n) => {
                 let result = program.copy_to_clipboard(records_list_state, n);
@@ -332,6 +339,36 @@ fn handle_input_search_mode(
         },
         ProgramEvent::Tick => {}
     }
+    Ok(())
+}
 
+fn handle_input_change_password(
+    program: &mut Program,
+    rx: &Receiver<ProgramEvent<KeyEvent>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match rx.recv()? {
+        ProgramEvent::Input(event) => match event.code {
+            KeyCode::Char(letter) => {
+                program.new_password.push(letter);
+            }
+            KeyCode::Backspace => {
+                program.new_password.pop();
+            }
+            KeyCode::Delete => {
+                program.new_password.clear();
+            }
+            KeyCode::Esc => {
+                program.popup = None;
+                program.new_password.clear();
+                program.mode = Mode::Normal;
+            }
+            KeyCode::Enter => {
+                Program::change_password(&program.new_password,program.logged_user.as_mut().expect("No logged user while changing the password. Critical error."))?;
+                program.should_quit = true;
+            }
+            _ => {}
+        },
+        ProgramEvent::Tick => {}
+    }
     Ok(())
 }

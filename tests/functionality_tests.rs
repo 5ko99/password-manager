@@ -223,7 +223,10 @@ fn change_pass_test() {
 
     assert!(program.add_record(record.clone()).is_ok());
 
-    assert!(program.change_password("newpass").is_ok());
+    assert!(Program::change_password("newpass",program.logged_user.as_mut().unwrap()).is_ok());
+    
+    assert!(program.logout().is_ok());
+
     assert!(program
         .login(
             USERNAME.to_string(),
@@ -236,5 +239,5 @@ fn change_pass_test() {
     assert!(program.records.contains(&record));
 
     //Finally
-    assert!(program.change_password(PASSWORD).is_ok());
+    assert!(Program::change_password(PASSWORD,program.logged_user.as_mut().unwrap()).is_ok());
 }

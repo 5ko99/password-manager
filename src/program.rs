@@ -59,6 +59,7 @@ pub struct Program {
     pub search_results_index: Option<usize>,
     pub editing_existing_record: bool,
     pub mode: Mode,
+    pub new_password: String,
 }
 
 pub enum ProgramEvent<I> {
@@ -79,6 +80,7 @@ pub enum Mode {
     Insert,
     Popup,
     Search,
+    ChangePass,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,6 +91,7 @@ pub enum Popup {
     RecordAlreadyExists { name: String },
     Search,
     Error { message: String },
+    ChangePassword,
 }
 
 impl From<MenuItem> for usize {
@@ -116,10 +119,14 @@ impl Program {
             search_results_index: None,
             editing_existing_record: false,
             mode: Mode::Normal,
+            new_password: String::new(),
         }
     }
 
-    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn initial_login(&mut self) -> Result<(), Box<dyn Error>> {
+        self.terminal.clear()?;
+        self.terminal.show_cursor()?;
+        disable_raw_mode().expect("Failed to disable raw mode");
         loop {
             println!("Enter l to login, or r to register.");
             let mut input = String::new();
@@ -144,8 +151,15 @@ impl Program {
                 println!("Invalid input.");
             }
         }
-
+        self.terminal.clear()?;
+        self.terminal.hide_cursor()?;
         enable_raw_mode().expect("Failed to enable raw mode");
+        Ok(())
+    }
+
+    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
+        self.initial_login()?;
+
         let (tx, rx) = mpsc::channel();
         let tick_rate = Duration::from_millis(200);
 
@@ -168,8 +182,6 @@ impl Program {
                 }
             }
         });
-
-        self.terminal.clear()?;
 
         self.active_menu_item = MenuItem::Main;
 
@@ -277,6 +289,12 @@ impl Program {
                                     let popup_content = Program::render_popup(&message);
                                     rect.render_widget(popup_content, chunks[2]);
                                 }
+                                Popup::ChangePassword => {
+                                    rect.render_widget(
+                                        Program::render_change_password(&self.new_password),
+                                        chunks[2],
+                                    );
+                                }
                             }
                         } else if let Some(help_paragraph) = Program::render_help_line(
                             MenuItem::Main,
@@ -366,6 +384,8 @@ impl Program {
                 continue;
             } else if username.len() > 16 {
                 println!("Username is too long!");
+            } else if username.len() < 4 {
+                println!("Username is too short!");
             } else {
                 break;
             }
@@ -386,12 +406,7 @@ impl Program {
 
         master_key = digest(master_key);
 
-        let user = User {
-            username: username.to_string(),
-            password: master_key,
-        };
-
-        Ok(user)
+        Ok(User::new(username, master_key))
     }
 
     pub fn register_user(&self, user: User) -> Result<(), Box<dyn Error>> {
@@ -660,6 +675,15 @@ impl Program {
         paragraph
     }
 
+    fn render_change_password<'a>(new_password: &String) -> Paragraph<'a> {
+        let paragraph = Paragraph::new(Span::styled(
+            format!("New password: {}", new_password),
+            Style::default().fg(Color::Yellow),
+        ))
+        .alignment(Alignment::Center);
+        paragraph
+    }
+
     fn render_add<'a>(record: &Record) -> Option<(List<'a>, List<'a>)> {
         let mut items: Vec<_> = Vec::new();
         // We need to render something for each field in the record, even if the field is empty for now.
@@ -897,23 +921,18 @@ impl Program {
         }
     }
 
-    //TODO: this is not workin properly debug it!
-    pub fn change_password(&mut self, new_pass: &str) -> Result<(), Box<dyn Error>> {
-        if let Some(user) = &mut self.logged_user {
-            let new_pass_hash = digest(new_pass);
-            let user_with_new_pass_hash = User::new(user.username.clone(), new_pass_hash);
-            user.change_password(&new_pass)?;
-            let mut users = Program::load_config().expect("Critical error: failed to load config");
-            let user_index = users
-                .iter()
-                .position(|u| u.username == user.username)
-                .expect("Critical error: failed to find user in config");
-            users[user_index] = user_with_new_pass_hash;
-            fs::write(PATH_TO_CONFIG, &serde_json::to_vec(&users)?)?;
-            self.logout()?;
-        } else {
-            return Err(Box::new(LogicError::NoLoggedUser));
-        }
+    pub fn change_password(new_pass: &str, user: &mut User) -> Result<(), Box<dyn Error>> {
+        let new_pass_hash = digest(new_pass);
+        let user_with_new_pass_hash = User::new(user.username.clone(), new_pass_hash);
+        user.change_password(new_pass)?;
+        let mut users = Program::load_config().expect("Critical error: failed to load config");
+        let user_index = users
+            .iter()
+            .position(|u| u.username == user.username)
+            .expect("Critical error: failed to find user in config");
+        users[user_index] = user_with_new_pass_hash;
+        fs::write(PATH_TO_CONFIG, &serde_json::to_vec(&users)?)?;
+
         Ok(())
     }
 }
