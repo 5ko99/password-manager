@@ -91,6 +91,7 @@ pub enum Popup {
     RecordAlreadyExists { name: String },
     Search,
     Error { message: String },
+    Information{ message: String },
     ChangePassword,
 }
 
@@ -193,6 +194,8 @@ impl Program {
 
         let mut edit_record = Record::new("", "", "", "");
 
+        let mut confirmed_password : String = String::new();
+
         loop {
             self.terminal.draw(|rect| {
                 let size = rect.size();
@@ -269,24 +272,26 @@ impl Program {
                                 Popup::DeleteARecord => {
                                     let popup_content = Program::render_popup(
                                         "Do you want to delete this record? (y/n)",
+                                        Color::Yellow,
                                     );
                                     rect.render_widget(popup_content, chunks[2]);
                                 }
                                 Popup::DeleteAnAccount => {
                                     let popup_content = Program::render_popup(
                                         "Do you want to delete this account? (y/n)",
+                                        Color::Red,
                                     );
                                     rect.render_widget(popup_content, chunks[2]);
                                 }
                                 Popup::Exit => {
                                     let popup_content =
-                                        Program::render_popup("Do you want to exit? (y/n)");
+                                        Program::render_popup("Do you want to exit? (y/n)", Color::Yellow);
                                     rect.render_widget(popup_content, chunks[2]);
                                 }
                                 Popup::Error { message } => {
                                     let message =
                                         format!("Error! {} Press esc to close the popup.", message);
-                                    let popup_content = Program::render_popup(&message);
+                                    let popup_content = Program::render_popup(&message, Color::Red);
                                     rect.render_widget(popup_content, chunks[2]);
                                 }
                                 Popup::ChangePassword => {
@@ -294,6 +299,10 @@ impl Program {
                                         Program::render_change_password(&self.new_password),
                                         chunks[2],
                                     );
+                                }
+                                Popup::Information { message } => {
+                                    let popup_content = Program::render_popup(message, Color::Green);
+                                    rect.render_widget(popup_content, chunks[2]);
                                 }
                             }
                         } else if let Some(help_paragraph) = Program::render_help_line(
@@ -341,6 +350,7 @@ impl Program {
                 &mut record_list_state,
                 &mut edit_list_state,
                 &mut edit_record,
+                &mut confirmed_password,
             );
 
             match handle_result {
@@ -676,8 +686,9 @@ impl Program {
     }
 
     fn render_change_password<'a>(new_password: &String) -> Paragraph<'a> {
+        let asterisks = "*".repeat(new_password.len());
         let paragraph = Paragraph::new(Span::styled(
-            format!("New password: {}", new_password),
+            format!("New password: {}", asterisks),
             Style::default().fg(Color::Yellow),
         ))
         .alignment(Alignment::Center);
@@ -820,12 +831,12 @@ impl Program {
         Some((list, records_detail))
     }
 
-    fn render_popup(prompt_text: &str) -> Paragraph {
+    fn render_popup(prompt_text: &str, color: Color) -> Paragraph {
         let paragraph = Paragraph::new(Span::styled(
             prompt_text,
             Style::default()
                 .add_modifier(Modifier::SLOW_BLINK)
-                .fg(Color::Red),
+                .fg(color),
         ));
         paragraph
     }

@@ -1,34 +1,34 @@
 use std::sync::mpsc::Receiver;
 
-use crossterm::event::{KeyEvent, KeyCode};
+use crossterm::event::{KeyCode, KeyEvent};
 use passwords::PasswordGenerator;
 use tui::widgets::ListState;
 
-use crate::{program::{Program, ProgramEvent, Mode, MenuItem, Popup, LogicError}, record::Record};
+use crate::{
+    program::{LogicError, MenuItem, Mode, Popup, Program, ProgramEvent},
+    record::Record,
+};
 
 pub fn handle_input(
-    program : &mut Program,
+    program: &mut Program,
     rx: &Receiver<ProgramEvent<KeyEvent>>,
     records_list_state: &mut ListState,
     edit_list_state: &mut ListState,
     edit_record: &mut Record,
+    confirmed_password: &mut String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match program.mode {
-        Mode::Normal => {
-            handle_input_normal_mode(program,rx, records_list_state, edit_list_state, edit_record)
-        }
-        Mode::Insert => {
-            handle_input_insert_mode(program,rx, edit_list_state, edit_record)
-        }
-        Mode::Popup => {
-            handle_input_popup_mode(program,rx, records_list_state)
-        }
-        Mode::Search => {
-            handle_input_search_mode(program,rx, records_list_state)
-        }
-        Mode::ChangePass => {
-            handle_input_change_password(program,rx)
-        }
+        Mode::Normal => handle_input_normal_mode(
+            program,
+            rx,
+            records_list_state,
+            edit_list_state,
+            edit_record,
+        ),
+        Mode::Insert => handle_input_insert_mode(program, rx, edit_list_state, edit_record),
+        Mode::Popup => handle_input_popup_mode(program, rx, records_list_state),
+        Mode::Search => handle_input_search_mode(program, rx, records_list_state),
+        Mode::ChangePass => handle_input_change_password(program, rx, confirmed_password),
     }
 }
 
@@ -133,8 +133,6 @@ fn handle_input_normal_mode(
     Ok(())
 }
 
-
-
 fn handle_input_insert_mode(
     program: &mut Program,
     rx: &Receiver<ProgramEvent<KeyEvent>>,
@@ -143,9 +141,7 @@ fn handle_input_insert_mode(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match rx.recv()? {
         ProgramEvent::Input(event) => match event.code {
-            KeyCode::Char(letter) => {
-                Program::write_letter(letter, edit_list_state, edit_record)
-            }
+            KeyCode::Char(letter) => Program::write_letter(letter, edit_list_state, edit_record),
             KeyCode::Up => {
                 if let Some(selected) = edit_list_state.selected() {
                     let len = Record::len(); // this is hardcoded for now
@@ -278,7 +274,7 @@ fn handle_input_popup_mode(
 fn handle_input_search_mode(
     program: &mut Program,
     rx: &Receiver<ProgramEvent<KeyEvent>>,
-    records_list_state: &mut ListState
+    records_list_state: &mut ListState,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match rx.recv()? {
         ProgramEvent::Input(event) => match event.code {
@@ -345,6 +341,7 @@ fn handle_input_search_mode(
 fn handle_input_change_password(
     program: &mut Program,
     rx: &Receiver<ProgramEvent<KeyEvent>>,
+    confirmed_password: &mut String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match rx.recv()? {
         ProgramEvent::Input(event) => match event.code {
@@ -363,8 +360,38 @@ fn handle_input_change_password(
                 program.mode = Mode::Normal;
             }
             KeyCode::Enter => {
-                Program::change_password(&program.new_password,program.logged_user.as_mut().expect("No logged user while changing the password. Critical error."))?;
-                program.should_quit = true;
+                let change_pass_result = Program::change_password(
+                    &program.new_password,
+                    program
+                        .logged_user
+                        .as_mut()
+                        .expect("No logged user while changing the password. Critical error."),
+                );
+
+                if let Err(e) = change_pass_result {
+                    program.popup = Some(Popup::Error {
+                        message: e.to_string(),
+                    });
+                } else {
+                    if confirmed_password.is_empty() {
+                        *confirmed_password = program.new_password.clone();
+                        program.new_password.clear();
+                    } else if *confirmed_password == program.new_password {
+                        program.new_password.clear();
+                        confirmed_password.clear();
+                        program.mode = Mode::Popup;
+                        program.popup = Some(Popup::Information {
+                            message: "Password successfully changed!".to_string(),
+                        });
+                    } else {
+                        program.new_password.clear();
+                        confirmed_password.clear();
+                        program.mode = Mode::Popup;
+                        program.popup = Some(Popup::Error {
+                            message: "Password does not match!".to_string(),
+                        });
+                    }
+                }
             }
             _ => {}
         },
