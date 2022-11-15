@@ -29,6 +29,7 @@ pub fn handle_input(
         Mode::Popup => handle_input_popup_mode(program, rx, records_list_state),
         Mode::Search => handle_input_search_mode(program, rx, records_list_state),
         Mode::ChangePass => handle_input_change_password(program, rx, confirmed_password),
+        Mode::InputBox => handle_input_input_box(program, rx),
     }
 }
 
@@ -118,6 +119,12 @@ fn handle_input_normal_mode(
                 program.popup = Some(Popup::ChangePassword);
                 program.mode = Mode::ChangePass;
             }
+            KeyCode::F(8) => {
+                program.popup = Some(Popup::InputBox {
+                    message: "Enter the desired generate password length".to_string(),
+                });
+                program.mode = Mode::InputBox;
+            }
             KeyCode::F(n) => {
                 let result = program.copy_to_clipboard(records_list_state, n);
                 if let Err(e) = result {
@@ -204,18 +211,14 @@ fn handle_input_insert_mode(
                 // Password generator
                 //TODO: Improve this
                 if program.active_menu_item == MenuItem::Add {
-                    let pg = PasswordGenerator {
-                        length: 12,
-                        numbers: true,
-                        lowercase_letters: true,
-                        uppercase_letters: true,
-                        symbols: false,
-                        spaces: false,
-                        exclude_similar_characters: false,
-                        strict: true,
-                    };
-
-                    let password = pg.generate_one();
+                    let password = generate_password(
+                        program
+                            .generating_password_options
+                            .length
+                            .parse::<usize>()
+                            .unwrap_or(8),
+                        false,
+                    );
                     if let Ok(password) = password {
                         edit_record.password = password;
                     }
@@ -226,6 +229,20 @@ fn handle_input_insert_mode(
         ProgramEvent::Tick => {}
     }
     Ok(())
+}
+
+fn generate_password(length: usize, symbols: bool) -> Result<String, &'static str> {
+    let pg = PasswordGenerator {
+        length,
+        numbers: true,
+        lowercase_letters: true,
+        uppercase_letters: true,
+        symbols,
+        spaces: false,
+        exclude_similar_characters: false,
+        strict: true,
+    };
+    pg.generate_one()
 }
 
 fn handle_input_popup_mode(
@@ -359,6 +376,7 @@ fn handle_input_change_password(
                 program.new_password.clear();
                 program.mode = Mode::Normal;
             }
+            KeyCode::F(7) => program.show_password = !program.show_password,
             KeyCode::Enter => {
                 let change_pass_result = Program::change_password(
                     &program.new_password,
@@ -392,6 +410,39 @@ fn handle_input_change_password(
                         });
                     }
                 }
+            }
+            _ => {}
+        },
+        ProgramEvent::Tick => {}
+    }
+    Ok(())
+}
+
+fn handle_input_input_box(
+    program: &mut Program,
+    rx: &Receiver<ProgramEvent<KeyEvent>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match rx.recv()? {
+        ProgramEvent::Input(event) => match event.code {
+            KeyCode::Char(letter) => {
+                if letter.is_numeric() {
+                    program.generating_password_options.length.push(letter);
+                }
+            }
+            KeyCode::Backspace => {
+                program.generating_password_options.length.pop();
+            }
+            KeyCode::Delete => {
+                program.generating_password_options.length.clear();
+            }
+            KeyCode::Esc => {
+                program.popup = None;
+                program.generating_password_options.length = String::new();
+                program.mode = Mode::Normal;
+            }
+            KeyCode::Enter => {
+                program.popup = None;
+                program.mode = Mode::Normal;
             }
             _ => {}
         },

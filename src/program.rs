@@ -60,6 +60,7 @@ pub struct Program {
     pub editing_existing_record: bool,
     pub mode: Mode,
     pub new_password: String,
+    pub generating_password_options: GeneratePasswordOptions,
 }
 
 pub enum ProgramEvent<I> {
@@ -81,6 +82,7 @@ pub enum Mode {
     Popup,
     Search,
     ChangePass,
+    InputBox,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,8 +93,30 @@ pub enum Popup {
     RecordAlreadyExists { name: String },
     Search,
     Error { message: String },
-    Information{ message: String },
+    Information { message: String },
     ChangePassword,
+    InputBox { message: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneratePasswordOptions {
+    pub length: String,
+    pub uppercase: bool,
+    pub lowercase: bool,
+    pub numbers: bool,
+    pub symbols: bool,
+}
+
+impl GeneratePasswordOptions {
+    pub fn default() -> Self {
+        Self {
+            length: "8".to_string(),
+            uppercase: true,
+            lowercase: true,
+            numbers: true,
+            symbols: false,
+        }
+    }
 }
 
 impl From<MenuItem> for usize {
@@ -121,6 +145,7 @@ impl Program {
             editing_existing_record: false,
             mode: Mode::Normal,
             new_password: String::new(),
+            generating_password_options: GeneratePasswordOptions::default(),
         }
     }
 
@@ -194,7 +219,7 @@ impl Program {
 
         let mut edit_record = Record::new("", "", "", "");
 
-        let mut confirmed_password : String = String::new();
+        let mut confirmed_password: String = String::new();
 
         loop {
             self.terminal.draw(|rect| {
@@ -284,8 +309,10 @@ impl Program {
                                     rect.render_widget(popup_content, chunks[2]);
                                 }
                                 Popup::Exit => {
-                                    let popup_content =
-                                        Program::render_popup("Do you want to exit? (y/n)", Color::Yellow);
+                                    let popup_content = Program::render_popup(
+                                        "Do you want to exit? (y/n)",
+                                        Color::Yellow,
+                                    );
                                     rect.render_widget(popup_content, chunks[2]);
                                 }
                                 Popup::Error { message } => {
@@ -296,13 +323,23 @@ impl Program {
                                 }
                                 Popup::ChangePassword => {
                                     rect.render_widget(
-                                        Program::render_change_password(&self.new_password),
+                                        Program::render_change_password(
+                                            &self.new_password,
+                                            &self.show_password,
+                                        ),
                                         chunks[2],
                                     );
                                 }
                                 Popup::Information { message } => {
-                                    let popup_content = Program::render_popup(message, Color::Green);
+                                    let popup_content =
+                                        Program::render_popup(message, Color::Green);
                                     rect.render_widget(popup_content, chunks[2]);
+                                }
+                                Popup::InputBox { message } => {
+                                    rect.render_widget(
+                                        Program::render_input_box(message, self.generating_password_options.length.parse::<usize>().unwrap_or(1)),
+                                        chunks[2],
+                                    );
                                 }
                             }
                         } else if let Some(help_paragraph) = Program::render_help_line(
@@ -613,6 +650,8 @@ impl Program {
             Spans::from(vec![Span::raw("Press 'f' to open search box. Type in the search term and press enter to search. To cancel search press ESC.")]),
             Spans::from(vec![Span::raw("When you are in search mode, use `left` and `right` arrows to navigate through all matches.")]),
             Spans::from(vec![Span::raw("When you view a record press F1 to copy the username, F2 to copy the email, F3 to copy the password. Press F4 to generate a random password when you are in Add/Edit mode.")]),
+            Spans::from(vec![Span::raw("Press `F7` to change you password.")]),
+            Spans::from(vec![Span::raw("Press `F8` to set the desired generated password length.")]),
             Spans::from(vec![Span::raw("Press `enter` when you are in edit/add mode to save the record.")]),
             Spans::from(vec![Span::raw("Press `esc` to go back to main when you are in edit/add mode.")]),
             Spans::from(vec![Span::raw("When you edit a record, you can only edit the username, email or password, but not the record name.")]),
@@ -685,10 +724,24 @@ impl Program {
         paragraph
     }
 
-    fn render_change_password<'a>(new_password: &String) -> Paragraph<'a> {
-        let asterisks = "*".repeat(new_password.len());
+    fn render_input_box<'a>(message: &String, length : usize) -> Paragraph<'a> {
         let paragraph = Paragraph::new(Span::styled(
-            format!("New password: {}", asterisks),
+            format!("{}: {}", message, length),
+            Style::default().fg(Color::White),
+        ))
+        .alignment(Alignment::Center);
+        paragraph
+    }
+
+    fn render_change_password<'a>(new_password: &String, show_password: &bool) -> Paragraph<'a> {
+        let shown_pass;
+        if *show_password {
+            shown_pass = new_password.clone();
+        } else {
+            shown_pass = "*".repeat(new_password.len());
+        }
+        let paragraph = Paragraph::new(Span::styled(
+            format!("New password: {}", shown_pass),
             Style::default().fg(Color::Yellow),
         ))
         .alignment(Alignment::Center);
