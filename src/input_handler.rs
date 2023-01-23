@@ -186,6 +186,9 @@ fn handle_input_insert_mode(
             KeyCode::Esc => {
                 program.active_menu_item = MenuItem::Main;
                 program.mode = Mode::Normal;
+                program.editing_existing_record = false;
+                edit_record.clear();
+                program.popup = None;
             }
             KeyCode::Enter => {
                 if !edit_record.name.is_empty() {
@@ -443,10 +446,25 @@ fn handle_input_input_box(
             KeyCode::Enter => {
                 program.popup = None;
                 program.mode = Mode::Normal;
+                if !number_in_range(
+                    program
+                        .generating_password_options
+                        .length
+                        .parse::<usize>()
+                        .unwrap_or(4),
+                    4,
+                    64,
+                ) {
+                    program.generating_password_options.length = "4".to_string();
+                }
             }
             _ => {}
         },
         ProgramEvent::Tick => {}
     }
     Ok(())
+}
+
+fn number_in_range(number: usize, min: usize, max: usize) -> bool {
+    number >= min && number <= max
 }

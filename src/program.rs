@@ -337,7 +337,13 @@ impl Program {
                                 }
                                 Popup::InputBox { message } => {
                                     rect.render_widget(
-                                        Program::render_input_box(message, self.generating_password_options.length.parse::<usize>().unwrap_or(1)),
+                                        Program::render_input_box(
+                                            message,
+                                            self.generating_password_options
+                                                .length
+                                                .parse::<usize>()
+                                                .unwrap_or(1),
+                                        ),
                                         chunks[2],
                                     );
                                 }
@@ -724,7 +730,7 @@ impl Program {
         paragraph
     }
 
-    fn render_input_box<'a>(message: &String, length : usize) -> Paragraph<'a> {
+    fn render_input_box<'a>(message: &String, length: usize) -> Paragraph<'a> {
         let paragraph = Paragraph::new(Span::styled(
             format!("{}: {}", message, length),
             Style::default().fg(Color::White),
