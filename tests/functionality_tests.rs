@@ -1,5 +1,6 @@
 use password_manager::{program::Program, record::Record, user::User};
 
+use serial_test::serial;
 use sha256::digest;
 
 const USERNAME: &str = "testuser";
@@ -8,6 +9,7 @@ const PASSWORD: &str = "1234";
 //TESTS MUST BE RUNNED WITH : cargo test -- --test-threads=1
 
 #[test]
+#[serial]
 fn test_add_record() {
     let mut program = Program::default();
 
@@ -38,6 +40,7 @@ fn test_add_record() {
 }
 
 #[test]
+#[serial]
 fn test_login_non_existing_user() {
     let mut program = Program::default();
     assert!(program
@@ -46,6 +49,7 @@ fn test_login_non_existing_user() {
 }
 
 #[test]
+#[serial]
 fn test_login_existing_user() {
     let mut program = Program::default();
     assert!(program
@@ -54,6 +58,7 @@ fn test_login_existing_user() {
 }
 
 #[test]
+#[serial]
 fn test_login_while_already_logged() {
     let mut program = Program::default();
     assert!(program
@@ -65,6 +70,7 @@ fn test_login_while_already_logged() {
 }
 
 #[test]
+#[serial]
 fn test_logout() {
     let mut program = Program::default();
     assert!(program
@@ -78,6 +84,7 @@ fn test_logout() {
 }
 
 #[test]
+#[serial]
 fn test_delete_record() {
     let mut program = Program::default();
     assert!(program
@@ -96,6 +103,7 @@ fn test_delete_record() {
 }
 
 #[test]
+#[serial]
 fn test_register_new_user() {
     let mut program = Program::default();
     let user = User::new("username".to_string(), digest("pass"));
@@ -213,6 +221,7 @@ fn test_search_with_four_matches_and_two_matches_in_word() {
 }
 
 #[test]
+#[serial]
 fn change_pass_test() {
     let mut program = Program::default();
     let record = Record::new("Twitter", "petko", "petko@abv.bg", "somepass123");
