@@ -119,4 +119,19 @@ fn test_encryption_and_decryption_with_invalid_password() {
     assert_eq!(std::mem::discriminant(decripted_error), std::mem::discriminant(&EncryptionError::DecryptionError{ info: "something".to_string() }));
 }
 
+#[test]
+fn test_encryption_and_decryption_with_invalid_username() {
+    let user = User::new(USERNAME.to_string(), PASSWORD.to_string()); 
+    let result = encrypt_data(&user,&"random text");
+    assert!(result.is_ok());
+    let result = result.unwrap();
+    
+    let user = User::new(USERNAME2.to_string(), PASSWORD.to_string()); //wrong username, right password
+    let decripted = decrypt_data(&user,&result);
+    assert!(decripted.is_err());
+    let decripted_error = decripted.unwrap_err();
+    let decripted_error = decripted_error.downcast_ref::<EncryptionError>().unwrap();
+    assert_eq!(std::mem::discriminant(decripted_error), std::mem::discriminant(&EncryptionError::DecryptionError{ info: "something".to_string() }));
+}
+
 //TODO: Write more tests!
