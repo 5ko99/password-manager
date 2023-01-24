@@ -92,13 +92,13 @@ fn test_delete_record() {
         .is_ok());
     let record1 = Record::new("rec1", "Petko", "", "");
     let record2 = Record::new("rec2", "Petko", "petko@abv.bg", "1234");
-    assert!(program.add_record(record1).is_ok());
-    assert!(program.add_record(record2).is_ok());
+    assert!(program.add_record(record1.clone()).is_ok());
+    assert!(program.add_record(record2.clone()).is_ok());
     assert_eq!(program.get_len_of_records(), 2);
 
-    assert!(program.delete_record("rec1").is_ok());
+    assert!(program.delete_record(record1).is_ok());
     assert_eq!(program.get_len_of_records(), 1);
-    assert!(program.delete_record("rec2").is_ok());
+    assert!(program.delete_record(record2).is_ok());
     assert_eq!(program.get_len_of_records(), 0);
 }
 

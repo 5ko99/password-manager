@@ -50,6 +50,7 @@ fn handle_input_normal_mode(
             KeyCode::Char('h') => program.active_menu_item = MenuItem::Help,
             KeyCode::Char('a') => {
                 program.active_menu_item = MenuItem::Add;
+                program.mode = Mode::Insert;
                 edit_list_state.select(Some(0));
             }
             KeyCode::Char('m') => program.active_menu_item = MenuItem::Main,
@@ -133,6 +134,14 @@ fn handle_input_normal_mode(
                     program.mode = Mode::Popup;
                 }
             }
+            KeyCode::Char('z') => match program.restore_deleted_record() {
+                Ok(_) => {}
+                Err(e) => {
+                    let message = String::from("Error restoring record: ") + &e.to_string();
+                    program.popup = Some(Popup::Error { message });
+                    program.mode = Mode::Popup;
+                }
+            },
             _ => {}
         },
         ProgramEvent::Tick => {}
@@ -196,10 +205,12 @@ fn handle_input_insert_mode(
                     program.popup = None;
 
                     if program.editing_existing_record {
+                        // Editing an existing record, not adding new one
                         if let Some(r) = program.records.iter_mut().find(|r| r == &edit_record) {
                             r.clone_from(edit_record);
                             program.active_menu_item = MenuItem::Main;
                         }
+                        program.editing_existing_record = false;
                     } else if let Err(e) = program.add_record(edit_record.clone()) {
                         return Err(e);
                     } else {
@@ -264,7 +275,12 @@ fn handle_input_popup_mode(
                     match popup {
                         Popup::DeleteARecord => {
                             if let Some(selected) = records_list_state.selected() {
-                                program.records.remove(selected);
+                                //program.records.remove(selected);
+                                let record_for_deletion = match program.records.get(selected) {
+                                    Some(r) => r.clone(),
+                                    None => return Err(Box::new(LogicError::NoSelectedRecord {})),
+                                };
+                                program.delete_record(record_for_deletion)?;
                                 records_list_state.select(Some(0));
                             } else {
                                 return Err(Box::new(LogicError::NoSelectedRecord {}));

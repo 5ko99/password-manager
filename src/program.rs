@@ -44,6 +44,8 @@ pub enum LogicError {
     UnexpectedError { err: String },
     #[snafu(display("Password must be at least {err} chars:"))]
     PasswordTooShort { err: usize },
+    #[snafu(display("No deleted record to restore!"))]
+    NoDeletedRecord,
 }
 
 pub struct Program {
@@ -61,6 +63,7 @@ pub struct Program {
     pub mode: Mode,
     pub new_password: String,
     pub generating_password_options: GeneratePasswordOptions,
+    pub last_deleted_record: Option<Record>,
 }
 
 pub enum ProgramEvent<I> {
@@ -146,6 +149,7 @@ impl Program {
             mode: Mode::Normal,
             new_password: String::new(),
             generating_password_options: GeneratePasswordOptions::default(),
+            last_deleted_record: None,
         }
     }
 
@@ -589,10 +593,29 @@ impl Program {
         }
     }
 
-    pub fn delete_record(&mut self, record_name: &str) -> Result<(), Box<dyn Error>> {
+    pub fn delete_record(&mut self, record: Record) -> Result<(), Box<dyn Error>> {
         if self.logged_user.is_some() {
-            self.records.retain(|r| r.name != record_name);
+            self.last_deleted_record = self
+                .records
+                .iter()
+                .find(|r| r == &&record)
+                .cloned();
+            self.records.retain(|r| r != &record);
             Ok(())
+        } else {
+            Err(Box::new(LogicError::NoLoggedUser))
+        }
+    }
+
+    pub fn restore_deleted_record(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.logged_user.is_some() {
+            if let Some(record) = &self.last_deleted_record {
+                self.records.push(record.clone());
+                self.last_deleted_record = None;
+                Ok(())
+            } else {
+                Err(Box::new(LogicError::NoDeletedRecord))
+            }
         } else {
             Err(Box::new(LogicError::NoLoggedUser))
         }
@@ -602,9 +625,13 @@ impl Program {
         if let Some(logged_user) = &self.logged_user {
             let path_to_data = format!("./data/{}.json", logged_user.username);
             let data = serde_json::to_string(&self.records)?;
-            let encrypted_data = encrypt_data(logged_user, &data);
-            //TODO: fix the unwrap
-            fs::write(path_to_data, encrypted_data.unwrap())
+            let encrypted_data = match encrypt_data(logged_user, &data) {
+                Ok(data) => data,
+                Err(e) => {
+                    return Err(e);
+                }
+            };
+            fs::write(path_to_data, encrypted_data)
                 .expect("Error while writing records to file!");
         } else {
             return Err(Box::new(LogicError::NoLoggedUser));
@@ -653,6 +680,7 @@ impl Program {
             Spans::from(vec![Span::raw("Press `a` to add a new record.")]),
             Spans::from(vec![Span::raw("Press `d` to delete the currently selected record.")]),
             Spans::from(vec![Span::raw("Press `e` to edit the currently selected record.")]),
+            Spans::from(vec![Span::raw("While editing a record, press `ENTER` to save the changes or press `ESC` to discard it and return to main window.")]),
             Spans::from(vec![Span::raw("Press 'f' to open search box. Type in the search term and press enter to search. To cancel search press ESC.")]),
             Spans::from(vec![Span::raw("When you are in search mode, use `left` and `right` arrows to navigate through all matches.")]),
             Spans::from(vec![Span::raw("When you view a record press F1 to copy the username, F2 to copy the email, F3 to copy the password. Press F4 to generate a random password when you are in Add/Edit mode.")]),
