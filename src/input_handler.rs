@@ -134,7 +134,7 @@ fn handle_input_normal_mode(
                     program.mode = Mode::Popup;
                 }
             }
-            KeyCode::Char('z') => match program.restore_deleted_record() {
+            KeyCode::Char('r') => match program.restore_deleted_record() {
                 Ok(_) => {}
                 Err(e) => {
                     let message = String::from("Error restoring record: ") + &e.to_string();

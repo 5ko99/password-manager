@@ -63,7 +63,7 @@ pub struct Program {
     pub mode: Mode,
     pub new_password: String,
     pub generating_password_options: GeneratePasswordOptions,
-    pub last_deleted_record: Option<Record>,
+    last_deleted_record: Vec<Record>,
 }
 
 pub enum ProgramEvent<I> {
@@ -149,7 +149,7 @@ impl Program {
             mode: Mode::Normal,
             new_password: String::new(),
             generating_password_options: GeneratePasswordOptions::default(),
-            last_deleted_record: None,
+            last_deleted_record: Vec::new(),
         }
     }
 
@@ -595,12 +595,8 @@ impl Program {
 
     pub fn delete_record(&mut self, record: Record) -> Result<(), Box<dyn Error>> {
         if self.logged_user.is_some() {
-            self.last_deleted_record = self
-                .records
-                .iter()
-                .find(|r| r == &&record)
-                .cloned();
             self.records.retain(|r| r != &record);
+            self.last_deleted_record.push(record);
             Ok(())
         } else {
             Err(Box::new(LogicError::NoLoggedUser))
@@ -609,9 +605,8 @@ impl Program {
 
     pub fn restore_deleted_record(&mut self) -> Result<(), Box<dyn Error>> {
         if self.logged_user.is_some() {
-            if let Some(record) = &self.last_deleted_record {
+            if let Some(record) = &self.last_deleted_record.pop() {
                 self.records.push(record.clone());
-                self.last_deleted_record = None;
                 Ok(())
             } else {
                 Err(Box::new(LogicError::NoDeletedRecord))
@@ -681,6 +676,7 @@ impl Program {
             Spans::from(vec![Span::raw("Press `d` to delete the currently selected record.")]),
             Spans::from(vec![Span::raw("Press `e` to edit the currently selected record.")]),
             Spans::from(vec![Span::raw("While editing a record, press `ENTER` to save the changes or press `ESC` to discard it and return to main window.")]),
+            Spans::from(vec![Span::raw("Press `r` to restore deleted records.")]),
             Spans::from(vec![Span::raw("Press 'f' to open search box. Type in the search term and press enter to search. To cancel search press ESC.")]),
             Spans::from(vec![Span::raw("When you are in search mode, use `left` and `right` arrows to navigate through all matches.")]),
             Spans::from(vec![Span::raw("When you view a record press F1 to copy the username, F2 to copy the email, F3 to copy the password. Press F4 to generate a random password when you are in Add/Edit mode.")]),
@@ -716,6 +712,7 @@ impl Program {
                     Spans::from(vec![Span::raw("Press 'a' to add a new record. Press 'e' to start editing the current record. Press 'f' to open search box.")]),
                     Spans::from(vec![Span::raw("To cancel search press ESC. Press 'up' and 'down' arrows to navigate through fields. Press 'd' to delete the current record.")]),
                     Spans::from(vec![Span::raw("Press 's'` to toggle showing the password. Use 'left' and 'right' arrows to navigate through menus.")]),
+                    Spans::from(vec![Span::raw("Press `r` to restore last deleted records.")]),
                     Spans::from(vec![Span::raw("When you view a record press F1 to copy the username, F2 to copy the email, F3 to copy the password. Press 'q' to quit. Press 'h' to see the help page for more information.")]),
                 ])
                 .alignment(Alignment::Left)

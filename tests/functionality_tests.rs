@@ -250,3 +250,52 @@ fn change_pass_test() {
     //Finally
     assert!(Program::change_password(PASSWORD,program.logged_user.as_mut().unwrap()).is_ok());
 }
+
+#[test]
+#[serial]
+fn resore_deleted_records() {
+    let mut program = Program::default();
+
+    let records = vec![
+        Record::new("test_rec_1", "", "", ""), 
+        Record::new("test_rec_2", "", "", ""),
+        Record::new("test_rec_3", "", "", ""),
+    ];
+
+    let number_of_records = records.len();
+
+    assert!(program
+        .login(USERNAME.to_string(), PASSWORD.to_string(), digest(PASSWORD))
+        .is_ok());
+
+    assert!(program.add_record(records[0].clone()).is_ok());
+    assert!(program.add_record(records[1].clone()).is_ok());
+    assert!(program.add_record(records[2].clone()).is_ok());
+
+    assert!(program.delete_record(records[1].clone()).is_ok());
+    assert!(program.delete_record(records[2].clone()).is_ok());
+
+    assert!(program.restore_deleted_record().is_ok());
+
+    assert_eq!(program.records.len(), number_of_records-1);
+    assert!(program.records.contains(&records[0]));
+    assert!(program.records.contains(&records[2]));
+    
+    assert!(program.delete_record(records[0].clone()).is_ok());
+
+    assert!(program.restore_deleted_record().is_ok());
+    assert!(program.restore_deleted_record().is_ok());
+
+    assert_eq!(program.records.len(), number_of_records);
+    assert!(program.records.contains(&records[0]));
+    assert!(program.records.contains(&records[1]));
+    assert!(program.records.contains(&records[2]));
+    assert_eq!(program.records.last().unwrap(), &records[1]);
+
+    assert!(program.restore_deleted_record().is_err());
+
+    //Clean newly added records from the database
+    assert!(program.delete_record(records[0].clone()).is_ok());
+    assert!(program.delete_record(records[1].clone()).is_ok());
+    assert!(program.delete_record(records[2].clone()).is_ok());
+}
