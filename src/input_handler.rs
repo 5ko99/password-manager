@@ -206,11 +206,16 @@ fn handle_input_insert_mode(
 
                     if program.editing_existing_record {
                         // Editing an existing record, not adding new one
+                        program.editing_existing_record = false;
                         if let Some(r) = program.records.iter_mut().find(|r| r == &edit_record) {
                             r.clone_from(edit_record);
                             program.active_menu_item = MenuItem::Main;
+                        } else {
+                            program.active_menu_item = MenuItem::Main;
+                            program.mode = Mode::Normal;
+                            edit_record.clear();
+                            return Err(Box::new(LogicError::CannotChangeRecordName));
                         }
-                        program.editing_existing_record = false;
                     } else if let Err(e) = program.add_record(edit_record.clone()) {
                         return Err(e);
                     } else {

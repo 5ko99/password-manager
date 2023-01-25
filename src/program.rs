@@ -50,6 +50,8 @@ pub enum LogicError {
     PasswordTooShort { err: usize },
     #[snafu(display("No deleted record to restore!"))]
     NoDeletedRecord,
+    #[snafu(display("You cannot change record name when editing an existing record!"))]
+    CannotChangeRecordName,
 }
 
 pub struct Program {
@@ -413,7 +415,12 @@ impl Program {
                         self.popup = Some(Popup::RecordAlreadyExists {
                             name: name.to_string(),
                         });
-                    } else {
+                    } else if let Some(LogicError::CannotChangeRecordName) = e.downcast_ref::<LogicError>() {
+                        self.popup = Some(Popup::Error {
+                            message: "You cannot change the name of the record!".to_string(),
+                        });
+                    } 
+                    else {
                         return Err(e);
                     }
                 }
