@@ -28,6 +28,10 @@ const PATH_TO_CONFIG: &str = "./data/.conf";
 
 pub const MINIMUM_PASSWORD_LENGTH: usize = 4;
 
+pub const MAXIMUM_PASSWORD_LENGTH: usize = 64;
+
+pub const MAXIMUM_RECORDS_IN_QUEUE: usize = 32;
+
 const MENU_TITLES: &[&str] = &["Main", "Add/Edit", "Help"];
 
 #[derive(Debug, Snafu)]
@@ -597,6 +601,11 @@ impl Program {
         if self.logged_user.is_some() {
             self.records.retain(|r| r != &record);
             self.last_deleted_record.push(record);
+
+            if self.last_deleted_record.len() > MAXIMUM_RECORDS_IN_QUEUE {
+                self.last_deleted_record.remove(0);
+            }
+
             Ok(())
         } else {
             Err(Box::new(LogicError::NoLoggedUser))
@@ -626,8 +635,7 @@ impl Program {
                     return Err(e);
                 }
             };
-            fs::write(path_to_data, encrypted_data)
-                .expect("Error while writing records to file!");
+            fs::write(path_to_data, encrypted_data).expect("Error while writing records to file!");
         } else {
             return Err(Box::new(LogicError::NoLoggedUser));
         }

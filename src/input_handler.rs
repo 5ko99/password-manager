@@ -5,7 +5,7 @@ use passwords::PasswordGenerator;
 use tui::widgets::ListState;
 
 use crate::{
-    program::{LogicError, MenuItem, Mode, Popup, Program, ProgramEvent},
+    program::{LogicError, MenuItem, Mode, Popup, Program, ProgramEvent, MINIMUM_PASSWORD_LENGTH, MAXIMUM_PASSWORD_LENGTH},
     record::Record,
 };
 
@@ -468,8 +468,8 @@ fn handle_input_input_box(
                         .length
                         .parse::<usize>()
                         .unwrap_or(4),
-                    4,
-                    64,
+                    MINIMUM_PASSWORD_LENGTH,
+                    MAXIMUM_PASSWORD_LENGTH,
                 ) {
                     program.generating_password_options.length = "4".to_string();
                 }
