@@ -72,6 +72,17 @@ fn handle_input_normal_mode(
                 program.popup = Some(Popup::Search);
                 program.mode = Mode::Search;
             }
+            KeyCode::Char('c') => {
+                //copy the record
+                program.active_menu_item = MenuItem::Add;
+                program.mode = Mode::Insert;
+                program.editing_existing_record = false;
+                edit_list_state.select(Some(0));
+                if let Some(selected) = records_list_state.selected() {
+                    edit_record.clone_from(&program.records[selected]);
+                }
+                edit_record.name = format!("{}_1", edit_record.name);
+            }
             KeyCode::Up => {
                 if let Some(selected) = records_list_state.selected() {
                     let records_len = program.records.len();
